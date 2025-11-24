@@ -1,0 +1,64 @@
+{
+    "channels": [
+        {
+            "id": "sportv",
+            "name": "SporTV",
+            "logo": "https://i.ibb.co/zHLK2fkg/sportv.webp",
+            "url": [
+                "https://embedcanais.com/sportv/",
+                "https://embedtv-5.icu/sportv"
+            ],
+            "guide": "https://meuguia.tv/programacao/canal/SPO",
+            "category": "futebol",
+            "country": "bra"
+        },
+        {
+            "id": "cartoonnetwork",
+            "name": "Cartoon Network",
+            "logo": "https://i.ibb.co/hxtcxgCq/cartoon.webp",
+            "url": [
+                "https://embedcanais.com/cartoonnetwork/",
+                "https://embedtv-5.icu/cartoonnetwork"
+            ],
+            "guide": "https://meuguia.tv/programacao/canal/CAR",
+            "category": "desenho",
+            "country": "bra"
+        },
+        {
+            "id": "globosp",
+            "name": "Globo SP",
+            "logo": "https://i.ibb.co/gFJSvxnC/globo.webp",
+            "url": [
+                "https://embedcanais.com/globosp/"
+            ],
+            "guide": "https://meuguia.tv/programacao/canal/GRD",
+            "category": "tv-aberta",
+            "country": "bra"
+        },
+        {
+            "id": "premiereclubes",
+            "name": "Premiere Clubes",
+            "logo": "https://i.ibb.co/pBhWTRVg/premiere.webp",
+            "url": [
+                "https://embedcanais.com/premiereclubes/"
+            ],
+            "guide": "https://meuguia.tv/programacao/canal/121",
+            "category": "futebol",
+            "country": "bra"
+        }
+    ],
+    "categories": [
+        {
+            "id": "futebol",
+            "name": "Futebol"
+        },
+        {
+            "id": "desenho",
+            "name": "Desenho"
+        },
+        {
+            "id": "tv-aberta",
+            "name": "TV Aberta"
+        }
+    ]
+}
