@@ -1,6 +1,6 @@
-import * as FileSystem from 'expo-file-system';
+import { createDownloadResumable, getContentUriAsync, documentDirectory } from 'expo-file-system/legacy';
 import * as IntentLauncher from 'expo-intent-launcher';
-import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 const GITHUB_REPO = 'HellFiveOsborn/h5tv';
@@ -21,15 +21,33 @@ export const checkForUpdate = async (): Promise<UpdateInfo | null> => {
 
         const data = await response.json();
         const latestVersion = data.tag_name.replace(/^v/, '');
-        const currentVersion = Application.nativeApplicationVersion || '1.0.0';
+        const currentVersion = Constants.expoConfig?.version || '1.0.0';
 
         if (compareVersions(latestVersion, currentVersion) > 0) {
-            const apkAsset = data.assets.find((asset: any) => asset.name.endsWith('.apk'));
+            // Find APK asset by content_type first (most reliable)
+            let apkAsset = data.assets.find((asset: any) =>
+                asset.content_type === 'application/vnd.android.package-archive'
+            );
+
+            // Fallback: search by file extension
+            if (!apkAsset) {
+                apkAsset = data.assets.find((asset: any) =>
+                    asset.name.toLowerCase().endsWith('.apk')
+                );
+            }
+
+            // Second fallback: search by name containing 'apk'
+            if (!apkAsset) {
+                apkAsset = data.assets.find((asset: any) =>
+                    asset.name.toLowerCase().includes('.apk')
+                );
+            }
+
             if (apkAsset) {
                 return {
                     version: latestVersion,
                     downloadUrl: apkAsset.browser_download_url,
-                    releaseNotes: data.body,
+                    releaseNotes: data.body || '',
                 };
             }
         }
@@ -41,14 +59,14 @@ export const checkForUpdate = async (): Promise<UpdateInfo | null> => {
 
 export const downloadUpdate = async (url: string, onProgress?: (progress: number) => void): Promise<string | null> => {
     try {
-        const callback = (downloadProgress: FileSystem.DownloadProgressData) => {
+        const callback = (downloadProgress: { totalBytesWritten: number; totalBytesExpectedToWrite: number }) => {
             const progress = downloadProgress.totalBytesWritten / downloadProgress.totalBytesExpectedToWrite;
             if (onProgress) onProgress(progress);
         };
 
-        const downloadResumable = FileSystem.createDownloadResumable(
+        const downloadResumable = createDownloadResumable(
             url,
-            FileSystem.documentDirectory + 'update.apk',
+            (documentDirectory || '') + 'update.apk',
             {},
             callback
         );
@@ -63,7 +81,7 @@ export const downloadUpdate = async (url: string, onProgress?: (progress: number
 
 export const installUpdate = async (fileUri: string) => {
     try {
-        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+        const contentUri = await getContentUriAsync(fileUri);
         await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
             data: contentUri,
             flags: 1,

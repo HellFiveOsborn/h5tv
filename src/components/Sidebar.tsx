@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, BackHandler, findNodeHandle, PressableProps } from 'react-native';
+import { View, Text, StyleSheet, Pressable, BackHandler, findNodeHandle, PressableProps, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { useFocusArea } from '../constants/FocusContext';
@@ -26,6 +26,10 @@ export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) =
     const itemRefs = useRef<(View | null)[]>([]);
     const [nodeHandles, setNodeHandles] = useState<(number | null)[]>([]);
     const { setFocusArea } = useFocusArea();
+    const { height: screenHeight } = useWindowDimensions();
+
+    // Determine if screen is small (less than 600px height, like 720p TV)
+    const isSmallScreen = screenHeight < 600;
 
     const menuItems = [
         { icon: 'home', label: 'Início', route: 'home' },
@@ -59,9 +63,28 @@ export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) =
         return undefined;
     };
 
+    // Dynamic styles based on screen size
+    const dynamicStyles = {
+        container: {
+            width: isSmallScreen ? 80 : 100,
+            paddingVertical: isSmallScreen ? 15 : 40,
+        },
+        menuItems: {
+            gap: isSmallScreen ? 8 : 20,
+        },
+        menuItem: {
+            paddingVertical: isSmallScreen ? 8 : 15,
+            paddingHorizontal: isSmallScreen ? 6 : 10,
+            width: isSmallScreen ? 68 : 80,
+        },
+        icon: {
+            size: isSmallScreen ? 22 : 28,
+        },
+    };
+
     return (
-        <View style={styles.container}>
-            <View style={styles.menuItems}>
+        <View style={[styles.container, dynamicStyles.container]}>
+            <View style={[styles.menuItems, dynamicStyles.menuItems]}>
                 {menuItems.map((item, index) => (
                     <TVPressable
                         key={index}
@@ -74,6 +97,7 @@ export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) =
                         onBlur={() => setFocusedIndex(null)}
                         style={[
                             styles.menuItem,
+                            dynamicStyles.menuItem,
                             focusedIndex === index && styles.menuItemFocused
                         ]}
                         // TV Navigation Props
@@ -84,7 +108,7 @@ export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) =
                     >
                         <Ionicons
                             name={item.icon as any}
-                            size={28}
+                            size={dynamicStyles.icon.size}
                             color={item.color || (activeRoute === item.route ? Colors.primary : '#888')}
                         />
                         <Text
@@ -106,28 +130,22 @@ export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) =
 
 const styles = StyleSheet.create({
     container: {
-        width: 100,
         height: '100%',
         backgroundColor: '#121212',
         borderRightWidth: 1,
         borderRightColor: 'rgba(255,255,255,0.05)',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 40,
     },
     menuItems: {
         flex: 1,
         justifyContent: 'center',
-        gap: 20,
     },
     menuItem: {
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
-        paddingVertical: 15,
-        paddingHorizontal: 10,
+        gap: 4,
         borderRadius: 8,
-        width: 80,
     },
     menuItemFocused: {
         backgroundColor: 'rgba(255, 255, 255, 0.1)',

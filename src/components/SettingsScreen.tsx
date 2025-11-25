@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Switch, Pressable, Alert, ActivityIndicator, ScrollView, Platform, DevSettings } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { Colors } from '../constants/Colors';
 import { Ionicons } from '@expo/vector-icons';
 import { StorageKeys } from '../constants/StorageKeys';
+import { checkForUpdate, UpdateInfo } from '../services/updateService';
+import { UpdateDialog } from './UpdateDialog';
 
 interface SettingRowProps {
     label: string;
@@ -56,6 +59,11 @@ export const SettingsScreen = () => {
     const [startOnBoot, setStartOnBoot] = useState(false);
     const [forceWifi, setForceWifi] = useState(true);
     const [loading, setLoading] = useState(true);
+    const [checkingUpdate, setCheckingUpdate] = useState(false);
+    const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+    const [updateDialogVisible, setUpdateDialogVisible] = useState(false);
+    const [checkUpdateFocused, setCheckUpdateFocused] = useState(false);
+    const appVersion = Constants.expoConfig?.version || '1.0.0';
 
     useEffect(() => {
         loadSettings();
@@ -111,6 +119,31 @@ export const SettingsScreen = () => {
     };
 
     const [clearCacheFocused, setClearCacheFocused] = useState(false);
+
+    const handleCheckUpdate = async () => {
+        setCheckingUpdate(true);
+        try {
+            const info = await checkForUpdate();
+            if (info) {
+                setUpdateInfo(info);
+                setUpdateDialogVisible(true);
+            } else {
+                Alert.alert(
+                    'Atualização',
+                    'Você já está usando a versão mais recente!',
+                    [{ text: 'OK' }]
+                );
+            }
+        } catch (error) {
+            Alert.alert(
+                'Erro',
+                'Não foi possível verificar atualizações. Verifique sua conexão.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setCheckingUpdate(false);
+        }
+    };
 
     const clearCache = async () => {
         Alert.alert(
@@ -187,6 +220,47 @@ export const SettingsScreen = () => {
             </View>
 
             <View style={styles.sectionTitleContainer}>
+                <Text style={styles.sectionTitle}>Atualizações</Text>
+            </View>
+
+            <View style={styles.section}>
+                <Pressable
+                    style={({ pressed }) => [
+                        styles.actionButton,
+                        pressed && styles.actionButtonPressed,
+                        checkUpdateFocused && styles.actionButtonFocused
+                    ]}
+                    onPress={handleCheckUpdate}
+                    onFocus={() => setCheckUpdateFocused(true)}
+                    onBlur={() => setCheckUpdateFocused(false)}
+                    focusable={true}
+                    disabled={checkingUpdate}
+                >
+                    <View style={styles.buttonContent}>
+                        {checkingUpdate ? (
+                            <ActivityIndicator size={22} color={Colors.primary} style={styles.buttonIcon} />
+                        ) : (
+                            <Ionicons
+                                name="cloud-download-outline"
+                                size={22}
+                                color={checkUpdateFocused ? '#fff' : Colors.primary}
+                                style={styles.buttonIcon}
+                            />
+                        )}
+                        <View>
+                            <Text style={[styles.actionButtonText, checkUpdateFocused && styles.textFocused]}>
+                                {checkingUpdate ? 'Verificando...' : 'Verificar Atualizações'}
+                            </Text>
+                            <Text style={[styles.actionButtonSubtext, checkUpdateFocused && styles.textDescriptionFocused]}>
+                                Buscar nova versão do aplicativo
+                            </Text>
+                        </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={checkUpdateFocused ? "#fff" : "#666"} />
+                </Pressable>
+            </View>
+
+            <View style={styles.sectionTitleContainer}>
                 <Text style={styles.sectionTitle}>Armazenamento</Text>
             </View>
 
@@ -215,8 +289,14 @@ export const SettingsScreen = () => {
 
             <View style={styles.footer}>
                 <Text style={styles.appName}>H5TV</Text>
-                <Text style={styles.versionText}>Versão 1.0.0</Text>
+                <Text style={styles.versionText}>Versão {appVersion}</Text>
             </View>
+
+            <UpdateDialog
+                visible={updateDialogVisible}
+                updateInfo={updateInfo}
+                onCancel={() => setUpdateDialogVisible(false)}
+            />
         </ScrollView>
     );
 };
@@ -328,6 +408,32 @@ const styles = StyleSheet.create({
         backgroundColor: '#333',
         marginLeft: 45, // Indent separator
         marginRight: 15,
+    },
+    actionButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 15,
+        borderRadius: 12,
+    },
+    actionButtonPressed: {
+        backgroundColor: 'rgba(90, 229, 9, 0.1)',
+    },
+    actionButtonFocused: {
+        backgroundColor: 'rgba(90, 229, 9, 0.15)',
+        borderWidth: 1,
+        borderColor: 'rgba(90, 229, 9, 0.3)',
+        transform: [{ scale: 1.01 }],
+    },
+    actionButtonText: {
+        color: Colors.primary,
+        fontSize: 17,
+        fontWeight: '600',
+    },
+    actionButtonSubtext: {
+        color: '#666',
+        fontSize: 12,
+        marginTop: 2,
     },
     clearCacheButton: {
         flexDirection: 'row',

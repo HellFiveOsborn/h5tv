@@ -7,10 +7,11 @@ import { checkForUpdate, UpdateInfo } from '../src/services/updateService';
 import { UpdateDialog } from '../src/components/UpdateDialog';
 import { SettingsModal } from '../src/components/SettingsModal';
 import { SettingsService } from '../src/services/settingsService';
-import { TouchableOpacity, Text, View, Platform } from 'react-native';
+import { TouchableOpacity, Text, View, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Network from 'expo-network';
 import * as IntentLauncher from 'expo-intent-launcher';
+import * as NavigationBar from 'expo-navigation-bar';
 
 export default function RootLayout() {
     useKeepAwake();
@@ -20,6 +21,14 @@ export default function RootLayout() {
 
     useEffect(() => {
         const init = async () => {
+            // Hide status bar for full screen mode
+            if (Platform.OS === 'android') {
+                RNStatusBar.setHidden(true);
+                RNStatusBar.setTranslucent(true);
+                // Hide navigation bar on Android
+                NavigationBar.setVisibilityAsync('hidden');
+            }
+
             // Check for updates
             const info = await checkForUpdate();
             if (info) {
@@ -43,7 +52,7 @@ export default function RootLayout() {
 
     return (
         <>
-            <StatusBar style="light" />
+            <StatusBar style="light" hidden={true} />
             <Stack
                 screenOptions={{
                     headerShown: false,

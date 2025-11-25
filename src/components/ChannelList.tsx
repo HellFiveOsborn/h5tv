@@ -308,6 +308,13 @@ ChannelList.displayName = 'ChannelList';
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        width: '100%',
+        height: '100%',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
     },
     contentWrapper: {
         flex: 1,
@@ -391,9 +398,11 @@ const styles = StyleSheet.create({
 
     // Channels Grid
     channelsContainer: {
+        backgroundColor: 'rgba(0, 0, 0, 0.05)',
         flex: 1,
-        paddingLeft: 20,
+        padding: 20,
         overflow: 'visible',
+        marginTop: -70,
     },
     header: {
         marginBottom: 15,

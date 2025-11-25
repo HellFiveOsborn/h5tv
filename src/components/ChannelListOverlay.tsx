@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Modal, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Modal, TouchableOpacity, StatusBar } from 'react-native';
 import { ChannelList } from './ChannelList';
 import { Channel } from '../services/channelService';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,8 +18,10 @@ export const ChannelListOverlay = ({ visible, onClose, onChannelSelect, onExit }
             transparent={true}
             animationType="fade"
             onRequestClose={onClose}
+            statusBarTranslucent={true}
         >
             <View style={styles.container}>
+                <StatusBar backgroundColor="transparent" barStyle="light-content" translucent />
                 {/* Content */}
                 <View style={styles.content}>
                     <LinearGradient
@@ -43,12 +45,10 @@ export const ChannelListOverlay = ({ visible, onClose, onChannelSelect, onExit }
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        flexDirection: 'row',
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
     },
     content: {
-        width: '100%',
-        height: '100%',
-        backgroundColor: 'transparent',
+        flex: 1,
     },
     gradient: {
         flex: 1,

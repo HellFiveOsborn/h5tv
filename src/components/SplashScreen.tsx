@@ -1,11 +1,15 @@
 import React from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { Colors } from '../constants/Colors';
 
 export const SplashScreen = () => {
     return (
         <View style={styles.container}>
-            <Text style={styles.logo}>H5TV</Text>
+            <Image
+                source={require('../../assets/logo.png')}
+                style={styles.logo}
+                resizeMode="contain"
+            />
             <ActivityIndicator size="large" color={Colors.primary} style={styles.loader} />
             <Text style={styles.loadingText}>Carregando...</Text>
         </View>
@@ -23,12 +27,11 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: 999, // Ensure it's on top
+        zIndex: 999,
     },
     logo: {
-        fontSize: 64,
-        fontWeight: 'bold',
-        color: Colors.primary,
+        width: 200,
+        height: 200,
         marginBottom: 20,
     },
     loader: {

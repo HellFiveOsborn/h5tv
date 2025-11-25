@@ -2,15 +2,15 @@
   "expo": {
     "name": "H5TV",
     "slug": "H5TV",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "landscape",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true
@@ -18,11 +18,19 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.hellfiveosborn.H5TV"
+    },
+    "androidStatusBar": {
+      "hidden": true,
+      "translucent": true,
+      "backgroundColor": "#00000000"
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#000000"
     },
     "web": {
       "favicon": "./assets/favicon.png"

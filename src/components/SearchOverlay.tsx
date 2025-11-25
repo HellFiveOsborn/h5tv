@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
-import { View, Text, StyleSheet, Modal, FlatList, Pressable, ActivityIndicator, Image, findNodeHandle } from 'react-native';
+import { View, Text, StyleSheet, Modal, FlatList, Pressable, ActivityIndicator, Image, findNodeHandle, useWindowDimensions, StatusBar, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -88,6 +88,61 @@ export const SearchOverlay = memo(({ visible, onClose, onChannelSelect, initialS
     const [programInfos, setProgramInfos] = useState<{ [channelId: string]: ProgramInfo | null }>({});
     const searchInputRef = useRef<View>(null);
     const flatListRef = useRef<FlatList>(null);
+    const { height: screenHeight, width: screenWidth } = useWindowDimensions();
+
+    // Responsive calculations
+    const isSmallScreen = screenHeight < 600;
+    const dynamicStyles = {
+        gradient: {
+            paddingHorizontal: isSmallScreen ? 20 : 60,
+            paddingTop: isSmallScreen ? 15 : 40,
+            paddingBottom: isSmallScreen ? 10 : 0,
+        },
+        header: {
+            marginBottom: isSmallScreen ? 15 : 30,
+        },
+        closeButton: {
+            padding: isSmallScreen ? 6 : 10,
+            marginRight: isSmallScreen ? 12 : 20,
+        },
+        closeIcon: isSmallScreen ? 22 : 28,
+        gameModeTitle: {
+            fontSize: isSmallScreen ? 18 : 24,
+        },
+        gameModeSubtitle: {
+            fontSize: isSmallScreen ? 13 : 16,
+            marginTop: isSmallScreen ? 4 : 6,
+        },
+        resultsCount: {
+            fontSize: isSmallScreen ? 12 : 14,
+            marginBottom: isSmallScreen ? 8 : 15,
+        },
+        footer: {
+            paddingVertical: isSmallScreen ? 10 : 20,
+        },
+        footerText: {
+            fontSize: isSmallScreen ? 10 : 12,
+        },
+        resultCard: {
+            padding: isSmallScreen ? 10 : 15,
+            height: isSmallScreen ? 56 : 70,
+        },
+        logoContainer: {
+            width: isSmallScreen ? 40 : 50,
+            height: isSmallScreen ? 40 : 50,
+            marginRight: isSmallScreen ? 10 : 15,
+        },
+        channelLogo: {
+            width: isSmallScreen ? 32 : 40,
+            height: isSmallScreen ? 32 : 40,
+        },
+        channelName: {
+            fontSize: isSmallScreen ? 14 : 16,
+        },
+        programText: {
+            fontSize: isSmallScreen ? 10 : 12,
+        },
+    };
 
     // Determine if we're in "game mode" (showing channels for a specific game)
     const isGameMode = initialSearchTerms.length > 0;
@@ -215,30 +270,32 @@ export const SearchOverlay = memo(({ visible, onClose, onChannelSelect, initialS
             transparent={true}
             animationType="fade"
             onRequestClose={handleClose}
+            statusBarTranslucent={true}
         >
             <View style={styles.container}>
+                <StatusBar backgroundColor="transparent" barStyle="light-content" translucent />
                 <LinearGradient
                     colors={['rgba(0, 0, 0, 0.95)', 'rgba(0, 0, 0, 0.98)']}
-                    style={styles.gradient}
+                    style={[styles.gradient, dynamicStyles.gradient]}
                 >
                     {/* Header with Search Input or Game Title */}
-                    <View style={styles.header}>
+                    <View style={[styles.header, dynamicStyles.header]}>
                         <Pressable
                             onPress={handleClose}
-                            style={styles.closeButton}
+                            style={[styles.closeButton, dynamicStyles.closeButton]}
                         >
-                            <Ionicons name="close" size={28} color="#fff" />
+                            <Ionicons name="close" size={dynamicStyles.closeIcon} color="#fff" />
                         </Pressable>
 
                         {isGameMode ? (
                             <View style={styles.gameModeHeader}>
                                 <View style={styles.gameTitleContainer}>
-                                    <Ionicons name="tv" size={24} color="#00ff88" style={styles.gameModeIcon} />
-                                    <Text style={styles.gameModeTitle}>
+                                    <Ionicons name="tv" size={isSmallScreen ? 18 : 24} color="#00ff88" style={styles.gameModeIcon} />
+                                    <Text style={[styles.gameModeTitle, dynamicStyles.gameModeTitle]}>
                                         {gameTitle || 'Canais que transmitem'}
                                     </Text>
                                 </View>
-                                <Text style={styles.gameModeSubtitle}>
+                                <Text style={[styles.gameModeSubtitle, dynamicStyles.gameModeSubtitle]}>
                                     Transmissão: {initialSearchTerms.join(' / ')}
                                 </Text>
                             </View>
@@ -260,19 +317,19 @@ export const SearchOverlay = memo(({ visible, onClose, onChannelSelect, initialS
                     <View style={styles.resultsContainer}>
                         {loading ? (
                             <View style={styles.centerContainer}>
-                                <ActivityIndicator size="large" color={Colors.primary} />
+                                <ActivityIndicator size={isSmallScreen ? "small" : "large"} color={Colors.primary} />
                                 <Text style={styles.loadingText}>Carregando canais...</Text>
                             </View>
                         ) : !showResults ? (
                             <View style={styles.centerContainer}>
-                                <Ionicons name="search" size={64} color="#333" />
+                                <Ionicons name="search" size={isSmallScreen ? 48 : 64} color="#333" />
                                 <Text style={styles.hintText}>
                                     Digite o nome do canal que deseja encontrar
                                 </Text>
                             </View>
                         ) : filteredChannels.length === 0 ? (
                             <View style={styles.centerContainer}>
-                                <Ionicons name="sad-outline" size={64} color="#333" />
+                                <Ionicons name="sad-outline" size={isSmallScreen ? 48 : 64} color="#333" />
                                 <Text style={styles.noResultsText}>
                                     {isGameMode
                                         ? `Nenhum canal disponível para ${initialSearchTerms.join(' / ')}`
@@ -282,7 +339,7 @@ export const SearchOverlay = memo(({ visible, onClose, onChannelSelect, initialS
                             </View>
                         ) : (
                             <>
-                                <Text style={styles.resultsCount}>
+                                <Text style={[styles.resultsCount, dynamicStyles.resultsCount]}>
                                     {isGameMode
                                         ? `${filteredChannels.length} ${filteredChannels.length === 1 ? 'canal disponível' : 'canais disponíveis'}`
                                         : `${filteredChannels.length} ${filteredChannels.length === 1 ? 'resultado' : 'resultados'} para "${searchQuery}"`
@@ -307,8 +364,8 @@ export const SearchOverlay = memo(({ visible, onClose, onChannelSelect, initialS
                     </View>
 
                     {/* Footer hint */}
-                    <View style={styles.footer}>
-                        <Text style={styles.footerText}>
+                    <View style={[styles.footer, dynamicStyles.footer]}>
+                        <Text style={[styles.footerText, dynamicStyles.footerText]}>
                             {isGameMode
                                 ? 'Selecione um canal para assistir • ESC para fechar'
                                 : 'Use as setas para navegar • Enter para selecionar • ESC para fechar'
@@ -326,11 +383,12 @@ SearchOverlay.displayName = 'SearchOverlay';
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.54)',
     },
     gradient: {
         flex: 1,
-        paddingHorizontal: 60,
-        paddingTop: 40,
+        width: '100%',
+        height: '100%',
     },
     header: {
         flexDirection: 'row',
@@ -343,7 +401,7 @@ const styles = StyleSheet.create({
     },
     searchContainer: {
         flex: 1,
-        maxWidth: 600,
+        // maxWidth: 600,
     },
     gameModeHeader: {
         flex: 1,
