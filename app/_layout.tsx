@@ -53,21 +53,10 @@ export default function RootLayout() {
                 <Stack.Screen name="index" />
             </Stack>
 
-            {/* Settings Button Overlay */}
-            <View style={{ position: 'absolute', top: 40, right: 20, zIndex: 100 }}>
-                <TouchableOpacity onPress={() => setSettingsVisible(true)}>
-                    <Ionicons name="settings-outline" size={24} color="white" />
-                </TouchableOpacity>
-            </View>
-
             <UpdateDialog
                 visible={dialogVisible}
                 updateInfo={updateInfo}
                 onCancel={() => setDialogVisible(false)}
-            />
-            <SettingsModal
-                visible={settingsVisible}
-                onClose={() => setSettingsVisible(false)}
             />
         </>
     );
