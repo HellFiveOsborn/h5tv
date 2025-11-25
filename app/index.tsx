@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Dimensions, Alert, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, Dimensions, Alert, Platform, DeviceEventEmitter, Pressable } from 'react-native';
 import { Colors } from '../src/constants/Colors';
 import { SplashScreen } from '../src/components/SplashScreen';
 import { GameSlider } from '../src/components/GameSlider';
@@ -7,31 +7,104 @@ import { ChannelList } from '../src/components/ChannelList';
 import { Sidebar } from '../src/components/Sidebar';
 import { TopBar } from '../src/components/TopBar';
 import { SettingsScreen } from '../src/components/SettingsScreen';
+import { SearchOverlay } from '../src/components/SearchOverlay';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Network from 'expo-network';
 import { syncTimeWithServer } from '../src/services/timeService';
 import { StorageKeys } from '../src/constants/StorageKeys';
-// import { IntentLauncherAndroid } from 'expo'; // Removed unused import
+import { FocusProvider } from '../src/constants/FocusContext';
 import * as Linking from 'expo-linking';
+import { useRouter } from 'expo-router';
+import { fetchChannels, Channel } from '../src/services/channelService';
 
 const { width } = Dimensions.get('window');
 
 export default function Home() {
     const [isSplashVisible, setSplashVisible] = useState(true);
     const [currentScreen, setCurrentScreen] = useState('home');
+    const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
+    const [gameSearchTerms, setGameSearchTerms] = useState<string[]>([]);
+    const [gameTitle, setGameTitle] = useState<string>('');
+    const [channels, setChannels] = useState<Channel[]>([]);
+    const [focusedChannelId, setFocusedChannelId] = useState<string | null>(null);
+    const contentRef = useRef<View>(null);
+    const router = useRouter();
 
     useEffect(() => {
         // Sync time when app starts
         syncTimeWithServer();
 
         checkWifiSettings();
+        loadChannels();
         const timer = setTimeout(() => {
             setSplashVisible(false);
         }, 3000);
 
-        return () => clearTimeout(timer);
+        // TV Event Handler for key logging (Android TV)
+        const keyEventSubscription = DeviceEventEmitter.addListener('onKeyDown', (event: any) => {
+            console.log('[TV Key Event - onKeyDown]', {
+                keyCode: event?.keyCode,
+                action: event?.action,
+                eventTime: event?.eventTime,
+                rawEvent: event,
+            });
+        });
+
+        const keyUpSubscription = DeviceEventEmitter.addListener('onKeyUp', (event: any) => {
+            console.log('[TV Key Event - onKeyUp]', {
+                keyCode: event?.keyCode,
+                action: event?.action,
+                rawEvent: event,
+            });
+        });
+
+        return () => {
+            clearTimeout(timer);
+            keyEventSubscription.remove();
+            keyUpSubscription.remove();
+        };
     }, []);
+
+    const loadChannels = async () => {
+        try {
+            const data = await fetchChannels();
+            setChannels(data.channels.slice(0, 15));
+        } catch (error) {
+            console.error('Error loading channels:', error);
+        }
+    };
+
+    const handleChannelPress = (channel: Channel) => {
+        router.push({
+            pathname: '/stream',
+            params: {
+                name: channel.name,
+                logo: channel.logo,
+                urls: JSON.stringify(channel.url),
+                guide: channel.guide || '',
+                meuGuiaTv: channel.meuGuiaTv || ''
+            }
+        });
+    };
+
+    const handleGamePress = (channels: string[], title: string) => {
+        setGameSearchTerms(channels);
+        setGameTitle(title);
+        setSearchOverlayVisible(true);
+    };
+
+    const handleSearchClose = () => {
+        setSearchOverlayVisible(false);
+        setGameSearchTerms([]);
+        setGameTitle('');
+    };
+
+    const handleOpenSearch = () => {
+        setGameSearchTerms([]);
+        setGameTitle('');
+        setSearchOverlayVisible(true);
+    };
 
     const checkWifiSettings = async () => {
         try {
@@ -79,26 +152,45 @@ export default function Home() {
                 colors={['#121212', '#000000']}
                 style={styles.gradientBackground}
             >
-                <TopBar />
+                <TopBar onSearchPress={handleOpenSearch} />
 
                 <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <GameSlider />
+                    <GameSlider onGamePress={handleGamePress} />
 
-                    {/* Next Broadcasts Section */}
+                    {/* All Channels Section */}
                     <View style={styles.sectionContainer}>
-                        <Text style={styles.sectionTitle}>Próximas Transmissões</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalList}>
-                            {/* Mock Data for Next Broadcasts */}
-                            {[1, 2, 3, 4].map((item) => (
-                                <View key={item} style={styles.nextGameCard}>
-                                    <Image
-                                        source={{ uri: 'https://img.freepik.com/free-photo/soccer-stadium-night-generative-ai_188544-8056.jpg' }}
-                                        style={styles.nextGameImage}
-                                    />
-                                    <View style={styles.nextGameOverlay}>
-                                        <Text style={styles.nextGameText}>Palmeiras x Flamengo</Text>
-                                        <Text style={styles.nextGameTime}>Amanhã, 21:30</Text>
-                                    </View>
+                        <Text style={styles.sectionTitle}>Todos os canais</Text>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.horizontalList}
+                            contentContainerStyle={styles.horizontalListContent}
+                        >
+                            {channels.map((channel) => (
+                                <View key={channel.id} style={styles.channelCardWrapper}>
+                                    <Pressable
+                                        onPress={() => handleChannelPress(channel)}
+                                        onFocus={() => setFocusedChannelId(channel.id)}
+                                        onBlur={() => setFocusedChannelId(null)}
+                                        style={[
+                                            styles.channelCard,
+                                            focusedChannelId === channel.id && styles.channelCardFocused
+                                        ]}
+                                    >
+                                        <View style={styles.channelLogoContainer}>
+                                            <Image
+                                                source={{ uri: channel.logo }}
+                                                style={styles.channelLogo}
+                                                resizeMode="contain"
+                                            />
+                                        </View>
+                                        <View style={styles.channelInfoContainer}>
+                                            <Text style={styles.channelName} numberOfLines={1}>
+                                                {channel.name}
+                                            </Text>
+                                            <Text style={styles.channelLive}>AO VIVO</Text>
+                                        </View>
+                                    </Pressable>
                                 </View>
                             ))}
                         </ScrollView>
@@ -109,19 +201,33 @@ export default function Home() {
     };
 
     return (
-        <View style={styles.container}>
-            {isSplashVisible && <SplashScreen />}
+        <FocusProvider>
+            <View style={styles.container}>
+                {isSplashVisible && <SplashScreen />}
 
-            {/* Main Layout: Sidebar + Content */}
-            <View style={styles.mainLayout}>
-                <Sidebar activeRoute={currentScreen} onNavigate={setCurrentScreen} />
+                {/* Main Layout: Sidebar + Content */}
+                <View style={styles.mainLayout}>
+                    <Sidebar
+                        activeRoute={currentScreen}
+                        onNavigate={setCurrentScreen}
+                        contentRef={contentRef}
+                    />
 
-                {/* Right Side Content */}
-                <View style={styles.contentContainer}>
-                    {renderContent()}
+                    {/* Right Side Content */}
+                    <View ref={contentRef} style={styles.contentContainer}>
+                        {renderContent()}
+                    </View>
                 </View>
+
+                {/* Search Overlay */}
+                <SearchOverlay
+                    visible={searchOverlayVisible}
+                    onClose={handleSearchClose}
+                    initialSearchTerms={gameSearchTerms}
+                    gameTitle={gameTitle}
+                />
             </View>
-        </View>
+        </FocusProvider>
     );
 }
 
@@ -155,34 +261,60 @@ const styles = StyleSheet.create({
     },
     horizontalList: {
         flexGrow: 0,
+        overflow: 'visible',
     },
-    nextGameCard: {
-        width: 200,
-        height: 120,
+    horizontalListContent: {
+        paddingVertical: 10,
+        paddingRight: 40,
+    },
+    channelCardWrapper: {
         marginRight: 15,
-        borderRadius: 8,
-        overflow: 'hidden',
-        backgroundColor: '#222',
+        overflow: 'visible',
     },
-    nextGameImage: {
+    channelCard: {
+        width: 180,
+        height: 130,
+        borderRadius: 12,
+        backgroundColor: '#1a1a1a',
+    },
+    channelCardFocused: {
+        backgroundColor: '#333',
+        transform: [{ scale: 1.08 }],
+        borderWidth: 2,
+        borderColor: '#00ff88',
+        elevation: 8,
+        shadowColor: '#00ff88',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    channelLogoContainer: {
+        width: '100%',
+        height: '65%',
+        backgroundColor: '#0d0d0d',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    channelLogo: {
         width: '100%',
         height: '100%',
-        opacity: 0.6,
     },
-    nextGameOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'flex-end',
-        padding: 10,
-        backgroundColor: 'rgba(0,0,0,0.3)',
+    channelInfoContainer: {
+        width: '100%',
+        height: '35%',
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
     },
-    nextGameText: {
+    channelName: {
         color: '#fff',
         fontSize: 14,
         fontWeight: 'bold',
+        marginBottom: 4,
     },
-    nextGameTime: {
-        color: '#ccc',
-        fontSize: 12,
+    channelLive: {
+        color: '#e50914',
+        fontSize: 11,
     },
 });
 

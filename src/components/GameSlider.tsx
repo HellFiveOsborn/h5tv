@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, Image, Dimensions, FlatList, ListRenderItemInfo, Animated, Pressable } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
+import { View, Text, StyleSheet, Image, Dimensions, FlatList, Animated, Pressable } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { fetchGames } from '../services/api';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusArea } from '../constants/FocusContext';
 
 // Import local assets
 const banner1 = require('../../assets/banner1.webp');
@@ -30,7 +31,7 @@ interface GameData {
     startTime: string;
 }
 
-const BlinkingDot = () => {
+const BlinkingDot = memo(() => {
     const opacity = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
@@ -51,29 +52,187 @@ const BlinkingDot = () => {
     }, []);
 
     return <Animated.View style={[styles.blinkingDot, { opacity }]} />;
+});
+
+// Format game status helper
+const formatGameStatus = (startTime: string, status: string, isLive: boolean) => {
+    if (isLive) return "AO VIVO";
+
+    const date = new Date(startTime);
+    const now = new Date();
+    const isToday = date.getDate() === now.getDate() &&
+        date.getMonth() === now.getMonth() &&
+        date.getFullYear() === now.getFullYear();
+
+    const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+
+    if (isToday) {
+        return `Hoje, ${timeStr}`;
+    } else {
+        const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+        return `${dateStr}, ${timeStr}`;
+    }
 };
 
-export const GameSlider = () => {
+// Memoized Game Card component
+interface GameCardProps {
+    item: GameData;
+    index: number;
+    isFocused: boolean;
+    onFocus: (index: number) => void;
+    onBlur: () => void;
+    onPress: () => void;
+}
+
+const GameCard = memo(({ item, index, isFocused, onFocus, onBlur, onPress }: GameCardProps) => {
+    const isLive = item.status.toLowerCase().includes('vivo') || item.status.toLowerCase().includes('int');
+    const bannerSource = BANNERS[index % BANNERS.length];
+    const statusText = formatGameStatus(item.startTime, item.status, isLive);
+
+    return (
+        <Pressable
+            onFocus={() => onFocus(index)}
+            onBlur={onBlur}
+            onPress={onPress}
+            style={[styles.cardContainer, isFocused && styles.activeCardGlow]}
+        >
+            <Image
+                source={bannerSource}
+                style={styles.backgroundImage}
+                resizeMode="cover"
+            />
+            <LinearGradient
+                colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.9)']}
+                style={styles.cardGradient}
+            >
+                {/* Header: Status Badge (Top Left) */}
+                <View style={styles.headerRow}>
+                    <View style={[styles.statusBadge, isLive ? styles.liveBadge : styles.scheduledBadge]}>
+                        {isLive && <BlinkingDot />}
+                        <Text style={styles.statusText}>
+                            {statusText}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Main Content: Logos & Score (Center) */}
+                <View style={styles.mainContent}>
+                    {/* Home Team Logo */}
+                    <Image source={{ uri: item.homeTeam.logo }} style={styles.logo} resizeMode="contain" />
+
+                    {/* Score & Time */}
+                    <View style={styles.scoreContainer}>
+                        <Text style={styles.scoreText}>{item.score}</Text>
+                        {isLive && <Text style={styles.gameTimeText}>68'</Text>}
+                    </View>
+
+                    {/* Away Team Logo */}
+                    <Image source={{ uri: item.awayTeam.logo }} style={styles.logo} resizeMode="contain" />
+                </View>
+
+                {/* Footer: Team Names & Info (Bottom Center) */}
+                <View style={styles.footerContent}>
+                    <Text style={styles.versusText}>
+                        {item.homeTeam.name} <Text style={{ color: '#aaa' }}>x</Text> {item.awayTeam.name}
+                    </Text>
+                    <View style={styles.footerInfoRow}>
+                        <Text style={styles.channelText}>{item.channel}</Text>
+                        <Text style={styles.footerStatusText}> • {item.competition}</Text>
+                    </View>
+                </View>
+            </LinearGradient>
+        </Pressable>
+    );
+});
+
+interface GameSliderProps {
+    onGamePress?: (channels: string[], gameTitle: string) => void;
+}
+
+export const GameSlider = ({ onGamePress }: GameSliderProps) => {
     const [games, setGames] = useState<GameData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
     const [focusedIndex, setFocusedIndex] = useState(0);
     const flatListRef = useRef<FlatList>(null);
+    const autoPlayRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isNavigatingByFocusRef = useRef(false); // Track if navigation is via focus (D-pad)
+    const AUTO_PLAY_DELAY = 5000; // 5 seconds between auto-advances
+
+    const { isAutoPlayAllowed, setFocusArea } = useFocusArea();
 
     useEffect(() => {
         loadGames();
+        return () => {
+            if (autoPlayRef.current) {
+                clearInterval(autoPlayRef.current);
+            }
+        };
     }, []);
+
+    // Auto-play effect - starts/stops based on global focus area
+    useEffect(() => {
+        if (games.length > 0 && isAutoPlayAllowed) {
+            // Start auto-play when focus is on sidebar, search, or none
+            if (!autoPlayRef.current) {
+                autoPlayRef.current = setInterval(() => {
+                    setFocusedIndex((prev) => (prev + 1) % games.length);
+                }, AUTO_PLAY_DELAY);
+            }
+        } else {
+            // Stop auto-play when focus is on slider or other content
+            if (autoPlayRef.current) {
+                clearInterval(autoPlayRef.current);
+                autoPlayRef.current = null;
+            }
+        }
+
+        return () => {
+            if (autoPlayRef.current) {
+                clearInterval(autoPlayRef.current);
+                autoPlayRef.current = null;
+            }
+        };
+    }, [games.length, isAutoPlayAllowed]);
 
     // Scroll to focused index when it changes
     useEffect(() => {
         if (games.length > 0 && flatListRef.current) {
-            flatListRef.current.scrollToIndex({
-                index: focusedIndex,
-                animated: true,
-                viewPosition: 0.5
+            flatListRef.current.scrollToOffset({
+                offset: focusedIndex * SNAP_INTERVAL,
+                animated: true
             });
         }
-    }, [focusedIndex, games]);
+    }, [focusedIndex, games.length]);
+
+    const handleCardFocus = useCallback((index: number) => {
+        // Cancel any pending blur timeout (focus moved to another card)
+        if (blurTimeoutRef.current) {
+            clearTimeout(blurTimeoutRef.current);
+            blurTimeoutRef.current = null;
+        }
+        // Mark that we're navigating via focus (D-pad), not swipe
+        isNavigatingByFocusRef.current = true;
+        setFocusArea('slider');
+        setFocusedIndex(index);
+    }, [setFocusArea]);
+
+    const handleCardBlur = useCallback(() => {
+        // Set a timeout to reset focus area - will be cancelled if focus moves to another card
+        blurTimeoutRef.current = setTimeout(() => {
+            setFocusArea('none');
+        }, 150); // Small delay to allow focus to move to another card
+    }, [setFocusArea]);
+
+    const handleCardPress = useCallback((item: GameData) => {
+        if (onGamePress && item.channel) {
+            // Parse channel names - split by '/' to handle multiple channels
+            const channelNames = item.channel.split('/').map(name => name.trim()).filter(name => name.length > 0);
+            const gameTitle = `${item.homeTeam.name} x ${item.awayTeam.name}`;
+            onGamePress(channelNames, gameTitle);
+        }
+    }, [onGamePress]);
 
     const loadGames = async () => {
         try {
@@ -89,84 +248,16 @@ export const GameSlider = () => {
         }
     };
 
-    const formatGameStatus = (startTime: string, status: string, isLive: boolean) => {
-        if (isLive) return "AO VIVO";
-
-        const date = new Date(startTime);
-        const now = new Date();
-        const isToday = date.getDate() === now.getDate() &&
-            date.getMonth() === now.getMonth() &&
-            date.getFullYear() === now.getFullYear();
-
-        const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
-
-        if (isToday) {
-            return `Hoje, ${timeStr}`;
-        } else {
-            const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
-            return `${dateStr}, ${timeStr}`;
-        }
-    };
-
-    const renderItem = ({ item, index }: ListRenderItemInfo<GameData>) => {
-        const isLive = item.status.toLowerCase().includes('vivo') || item.status.toLowerCase().includes('int');
-        const isFocused = index === focusedIndex;
-        const bannerSource = BANNERS[index % BANNERS.length];
-        const statusText = formatGameStatus(item.startTime, item.status, isLive);
-
-        return (
-            <Pressable
-                onFocus={() => setFocusedIndex(index)}
-                style={[styles.cardContainer, isFocused && styles.activeCardGlow]}
-            >
-                <Image
-                    source={bannerSource}
-                    style={styles.backgroundImage}
-                    resizeMode="cover"
-                />
-                <LinearGradient
-                    colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.9)']}
-                    style={styles.cardGradient}
-                >
-                    {/* Header: Status Badge (Top Left) */}
-                    <View style={styles.headerRow}>
-                        <View style={[styles.statusBadge, isLive ? styles.liveBadge : styles.scheduledBadge]}>
-                            {isLive && <BlinkingDot />}
-                            <Text style={styles.statusText}>
-                                {statusText}
-                            </Text>
-                        </View>
-                    </View>
-
-                    {/* Main Content: Logos & Score (Center) */}
-                    <View style={styles.mainContent}>
-                        {/* Home Team Logo */}
-                        <Image source={{ uri: item.homeTeam.logo }} style={styles.logo} resizeMode="contain" />
-
-                        {/* Score & Time */}
-                        <View style={styles.scoreContainer}>
-                            <Text style={styles.scoreText}>{item.score}</Text>
-                            {isLive && <Text style={styles.gameTimeText}>68'</Text>}
-                        </View>
-
-                        {/* Away Team Logo */}
-                        <Image source={{ uri: item.awayTeam.logo }} style={styles.logo} resizeMode="contain" />
-                    </View>
-
-                    {/* Footer: Team Names & Info (Bottom Center) */}
-                    <View style={styles.footerContent}>
-                        <Text style={styles.versusText}>
-                            {item.homeTeam.name} <Text style={{ color: '#aaa' }}>x</Text> {item.awayTeam.name}
-                        </Text>
-                        <View style={styles.footerInfoRow}>
-                            <Text style={styles.channelText}>{item.channel}</Text>
-                            <Text style={styles.footerStatusText}> • {item.competition}</Text>
-                        </View>
-                    </View>
-                </LinearGradient>
-            </Pressable>
-        );
-    };
+    const renderItem = useCallback(({ item, index }: { item: GameData; index: number }) => (
+        <GameCard
+            item={item}
+            index={index}
+            isFocused={index === focusedIndex}
+            onFocus={handleCardFocus}
+            onBlur={handleCardBlur}
+            onPress={() => handleCardPress(item)}
+        />
+    ), [focusedIndex, handleCardFocus, handleCardBlur, handleCardPress]);
 
     if (loading) {
         return (
@@ -198,24 +289,46 @@ export const GameSlider = () => {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.listContent}
-                // TV Specific Props
+                // Scroll behavior
+                bounces={false}
+                overScrollMode="never"
+                scrollEnabled={true}
+                snapToInterval={SNAP_INTERVAL}
+                snapToAlignment="start"
+                decelerationRate="fast"
+                disableIntervalMomentum={true}
+                // Performance
                 removeClippedSubviews={false}
-                scrollEnabled={false} // Disable manual scroll, rely on focus
                 getItemLayout={(data, index) => (
                     { length: SNAP_INTERVAL, offset: SNAP_INTERVAL * index, index }
                 )}
+                // Event handlers
+                onScrollBeginDrag={() => {
+                    // Only set focus area for swipe gestures
+                    isNavigatingByFocusRef.current = false;
+                    setFocusArea('slider');
+                }}
+                onMomentumScrollEnd={(event) => {
+                    // Only update focusedIndex if this was a swipe gesture, not D-pad navigation
+                    if (!isNavigatingByFocusRef.current) {
+                        const newIndex = Math.round(event.nativeEvent.contentOffset.x / SNAP_INTERVAL);
+                        const clampedIndex = Math.max(0, Math.min(newIndex, games.length - 1));
+                        setFocusedIndex(clampedIndex);
+                        // Resume auto-play after scroll ends
+                        setTimeout(() => {
+                            setFocusArea('none');
+                        }, 1000);
+                    }
+                    // Reset the flag after scroll ends
+                    isNavigatingByFocusRef.current = false;
+                }}
             />
 
             <View style={styles.dotsContainer}>
-                {games.map((_, index) => (
-                    <View
-                        key={index}
-                        style={[
-                            styles.dot,
-                            focusedIndex === index ? styles.activeDot : null
-                        ]}
-                    />
-                ))}
+                {/* Fixed 3 dots indicator: left (has previous), center (active), right (has next) */}
+                <View style={[styles.dot, focusedIndex > 0 ? styles.visibleDot : styles.hiddenDot]} />
+                <View style={[styles.dot, styles.activeDot]} />
+                <View style={[styles.dot, focusedIndex < games.length - 1 ? styles.visibleDot : styles.hiddenDot]} />
             </View>
         </View>
     );
@@ -372,15 +485,21 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     dot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#333',
-        marginHorizontal: 3,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        marginHorizontal: 4,
+    },
+    visibleDot: {
+        backgroundColor: '#555',
+    },
+    hiddenDot: {
+        backgroundColor: 'transparent',
     },
     activeDot: {
         backgroundColor: '#00ff88',
-        width: 20,
-        height: 6,
+        width: 24,
+        height: 8,
+        borderRadius: 4,
     },
 });

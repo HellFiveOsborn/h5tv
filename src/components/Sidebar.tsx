@@ -1,15 +1,47 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, BackHandler } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, StyleSheet, Pressable, BackHandler, findNodeHandle, PressableProps } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
+import { useFocusArea } from '../constants/FocusContext';
+
+// Extended props for TV navigation (these exist at runtime on Android TV)
+interface TVPressableProps extends PressableProps {
+    hasTVPreferredFocus?: boolean;
+    nextFocusUp?: number;
+    nextFocusDown?: number;
+    nextFocusLeft?: number;
+    nextFocusRight?: number;
+}
+
+const TVPressable = Pressable as React.ComponentType<TVPressableProps & React.RefAttributes<View>>;
 
 interface SidebarProps {
     activeRoute: string;
     onNavigate: (route: string) => void;
+    contentRef?: React.RefObject<any>;
 }
 
-export const Sidebar = ({ activeRoute, onNavigate }: SidebarProps) => {
+export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) => {
     const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+    const itemRefs = useRef<(View | null)[]>([]);
+    const [nodeHandles, setNodeHandles] = useState<(number | null)[]>([]);
+    const { setFocusArea } = useFocusArea();
+
+    const menuItems = [
+        { icon: 'home', label: 'Início', route: 'home' },
+        { icon: 'grid', label: 'Lista de Canais', route: 'channels' },
+        { icon: 'settings-outline', label: 'Configurações', route: 'settings' },
+        { icon: 'power', label: 'Sair', route: 'logout', color: '#e50914' },
+    ];
+
+    useEffect(() => {
+        // Delay to ensure refs are mounted
+        const timer = setTimeout(() => {
+            const handles = itemRefs.current.map(ref => ref ? findNodeHandle(ref) : null);
+            setNodeHandles(handles);
+        }, 100);
+        return () => clearTimeout(timer);
+    }, []);
 
     const handleNavigate = (route: string) => {
         if (route === 'logout') {
@@ -19,26 +51,36 @@ export const Sidebar = ({ activeRoute, onNavigate }: SidebarProps) => {
         onNavigate(route);
     };
 
-    const menuItems = [
-        { icon: 'home', label: 'Início', route: 'home' },
-        { icon: 'grid', label: 'Lista de Canais', route: 'channels' },
-        { icon: 'settings-outline', label: 'Configurações', route: 'settings' },
-        { icon: 'power', label: 'Sair', route: 'logout', color: '#e50914' },
-    ];
+    const getContentNodeHandle = (): number | undefined => {
+        if (contentRef?.current) {
+            const handle = findNodeHandle(contentRef.current);
+            return handle ?? undefined;
+        }
+        return undefined;
+    };
 
     return (
         <View style={styles.container}>
             <View style={styles.menuItems}>
                 {menuItems.map((item, index) => (
-                    <Pressable
+                    <TVPressable
                         key={index}
+                        ref={(ref) => { itemRefs.current[index] = ref; }}
                         onPress={() => handleNavigate(item.route)}
-                        onFocus={() => setFocusedIndex(index)}
+                        onFocus={() => {
+                            setFocusedIndex(index);
+                            setFocusArea('sidebar');
+                        }}
                         onBlur={() => setFocusedIndex(null)}
                         style={[
                             styles.menuItem,
                             focusedIndex === index && styles.menuItemFocused
                         ]}
+                        // TV Navigation Props
+                        hasTVPreferredFocus={index === 0}
+                        nextFocusUp={index > 0 ? nodeHandles[index - 1] ?? undefined : undefined}
+                        nextFocusDown={index < menuItems.length - 1 ? nodeHandles[index + 1] ?? undefined : undefined}
+                        nextFocusRight={getContentNodeHandle()}
                     >
                         <Ionicons
                             name={item.icon as any}
@@ -55,7 +97,7 @@ export const Sidebar = ({ activeRoute, onNavigate }: SidebarProps) => {
                         >
                             {item.label}
                         </Text>
-                    </Pressable>
+                    </TVPressable>
                 ))}
             </View>
         </View>

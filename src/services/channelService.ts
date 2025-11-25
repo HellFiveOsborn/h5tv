@@ -2,6 +2,9 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageKeys } from '../constants/StorageKeys';
 
+// Import local channels as fallback
+import localChannels from '../../channels.json';
+
 const API_URL = "https://gist.githubusercontent.com/HellFiveOsborn/e792ae1b5b0085418318828ddc282d43/raw/h5tv.channels.json";
 
 export interface Channel {
@@ -59,15 +62,24 @@ export const fetchChannels = async (): Promise<ChannelData> => {
         console.log("Fetching channels from:", API_URL);
         const noCacheUrl = `${API_URL}?nocache=${Date.now()}`;
         const response = await fetch(noCacheUrl);
-        const json = await response.json();
 
-        // Transform the object-based structure to arrays if necessary, 
-        // but based on the user prompt, it seems the JSON might be structured as arrays or objects.
-        // The prompt says:
-        // categories[1]{id,name}: futebol,Futebol
-        // channels[1]: [0]{...}
-        // Let's assume the JSON matches the interfaces directly or adapt if needed.
-        // If the API returns exactly what's in the prompt description, it should map directly.
+        // Check if response is OK
+        if (!response.ok) {
+            console.warn(`Remote fetch failed with status: ${response.status}`);
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        // Get response as text first for better error handling
+        const responseText = await response.text();
+
+        // Try to parse JSON
+        let json;
+        try {
+            json = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error("JSON parse error. Response was:", responseText.substring(0, 200));
+            throw new Error('Invalid JSON response from server');
+        }
 
         const data: ChannelData = {
             categories: json.categories || [],
@@ -90,7 +102,26 @@ export const fetchChannels = async (): Promise<ChannelData> => {
         return data;
 
     } catch (error) {
-        console.error("Error fetching channels:", error);
-        throw error;
+        console.warn("Remote channel fetch failed, using local fallback:", error);
+
+        // Fallback to local channels.json
+        console.log("Using local channels fallback");
+        const data: ChannelData = {
+            categories: localChannels.categories || [],
+            channels: localChannels.channels || []
+        };
+
+        // Still cache the fallback data (with shorter duration for retries)
+        cache = { data, timestamp: now };
+
+        // Try to persist fallback data too
+        try {
+            await AsyncStorage.setItem(StorageKeys.CACHE_CHANNELS_DATA, JSON.stringify(data));
+            await AsyncStorage.setItem(StorageKeys.CACHE_CHANNELS_TIMESTAMP, now.toString());
+        } catch (e) {
+            console.warn('Error saving fallback channels cache', e);
+        }
+
+        return data;
     }
 };
