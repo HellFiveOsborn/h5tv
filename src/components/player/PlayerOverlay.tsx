@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Image, Pressable, StyleSheet, Animated } from 'react-native';
+import { View, Text, Image, Pressable, StyleSheet, Animated, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Channel } from '../../services/channelService';
 import { ProgramInfo } from '../../services/guideService';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface PlayerOverlayProps {
     visible: boolean;
@@ -30,19 +32,13 @@ export const PlayerOverlay = ({
 }: PlayerOverlayProps) => {
     const [isSourceFocused, setIsSourceFocused] = useState(false);
     const [isLogoFocused, setIsLogoFocused] = useState(false);
-    const sourceButtonRef = useRef<View>(null);
-
-    // Auto-focus the source button when overlay becomes visible
-    useEffect(() => {
-        // Auto-focus removed per user request to avoid focus stealing on open
-    }, [visible, totalUrls]);
 
     // Notify parent about focus changes to prevent auto-hide
     useEffect(() => {
         if (onFocusChange) {
             onFocusChange(isSourceFocused || isLogoFocused);
         }
-    }, [isSourceFocused, isLogoFocused]);
+    }, [isSourceFocused, isLogoFocused, onFocusChange]);
 
     if (!visible) return null;
 
@@ -59,88 +55,131 @@ export const PlayerOverlay = ({
         return (now - start) / (end - start);
     };
 
-    const progressPercent = `${Math.min(Math.max(getProgress() * 100, 0), 100)}%` as any;
+    const progress = getProgress();
+    const progressPercent = `${Math.min(Math.max(progress * 100, 0), 100)}%` as any;
+
+    // Calculate remaining time
+    const getRemainingTime = () => {
+        if (!programInfo?.endTime) return null;
+        const now = new Date().getTime();
+        const end = new Date(programInfo.endTime).getTime();
+        const remaining = Math.max(0, end - now);
+        const minutes = Math.floor(remaining / 60000);
+        if (minutes > 60) {
+            const hours = Math.floor(minutes / 60);
+            const mins = minutes % 60;
+            return `${hours}h${mins}min restantes`;
+        }
+        return `${minutes}min restantes`;
+    };
 
     return (
-        <Animated.View style={[styles.bottomOverlay, { opacity: fadeAnim }]} pointerEvents="box-none">
+        <Animated.View style={[styles.overlay, { opacity: fadeAnim }]} pointerEvents="box-none">
             <LinearGradient
-                colors={['rgba(20,20,20,0.95)', 'rgba(20,20,20,0.98)']}
-                style={styles.bottomBar}
+                colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']}
+                locations={[0, 0.3, 1]}
+                style={styles.gradient}
             >
-                {/* Left: Channel & Program Info */}
-                <View style={styles.leftSection}>
+                <View style={styles.content}>
+                    {/* Left Section: Logo */}
                     <Pressable
                         focusable={true}
                         hasTVPreferredFocus={true}
                         onFocus={() => setIsLogoFocused(true)}
                         onBlur={() => setIsLogoFocused(false)}
                         style={[
-                            isLogoFocused && { transform: [{ scale: 1.1 }] }
+                            styles.logoContainer,
+                            isLogoFocused && styles.logoContainerFocused
                         ]}
                     >
-                        <Image source={{ uri: currentChannel.logo }} style={styles.channelLogo} resizeMode="contain" />
+                        <Image
+                            source={{ uri: currentChannel.logo }}
+                            style={styles.logo}
+                            resizeMode="contain"
+                        />
                     </Pressable>
-                    <View style={styles.infoContainer}>
-                        <Text style={styles.channelName}>{currentChannel.name}</Text>
+
+                    {/* Center Section: Channel & Program Info */}
+                    <View style={styles.infoSection}>
+                        {/* Channel Name */}
+                        <Text style={styles.channelName} numberOfLines={1}>
+                            {currentChannel.name}
+                        </Text>
+
                         {programInfo ? (
                             <>
+                                {/* Current Program */}
                                 <View style={styles.programRow}>
                                     <Text style={styles.programTitle} numberOfLines={1}>
                                         {programInfo.title}
                                     </Text>
-                                    <Text style={styles.programTime}> {programInfo.time}</Text>
+                                    <Text style={styles.programTime}>
+                                        {programInfo.time}
+                                    </Text>
                                 </View>
 
                                 {/* Progress Bar */}
-                                <View style={styles.progressBarContainer}>
-                                    <View style={[styles.progressBarFill, { width: progressPercent }]} />
+                                <View style={styles.progressContainer}>
+                                    <View style={styles.progressBar}>
+                                        <View style={[styles.progressFill, { width: progressPercent }]} />
+                                    </View>
+                                    <Text style={styles.remainingTime}>
+                                        {getRemainingTime()}
+                                    </Text>
                                 </View>
 
+                                {/* Next Program */}
                                 {programInfo.next && (
-                                    <Text style={styles.nextProgramTitle} numberOfLines={1}>
-                                        <Text style={{ opacity: 0.7 }}>Próximo: </Text>
-                                        {programInfo.next.title}
-                                        <Text style={styles.nextProgramTime}> {programInfo.next.time}</Text>
-                                    </Text>
+                                    <View style={styles.nextProgramRow}>
+                                        <Text style={styles.nextLabel}>A seguir:</Text>
+                                        <Text style={styles.nextTitle} numberOfLines={1}>
+                                            {programInfo.next.title}
+                                        </Text>
+                                        <Text style={styles.nextTime}>
+                                            {programInfo.next.time}
+                                        </Text>
+                                    </View>
                                 )}
                             </>
                         ) : (
-                            <Text style={styles.programTitle}>Sem informações do guia</Text>
+                            <View style={styles.programRow}>
+                                <View style={styles.liveBadge}>
+                                    <View style={styles.liveDot} />
+                                    <Text style={styles.liveText}>AO VIVO</Text>
+                                </View>
+                            </View>
                         )}
                     </View>
-                </View>
 
-                {/* Right: Time & Controls */}
-                <View style={styles.rightSection}>
-                    <Text style={styles.clockText}>{currentTime}</Text>
+                    {/* Right Section: Time & Controls */}
+                    <View style={styles.rightSection}>
+                        <Text style={styles.clock}>{currentTime}</Text>
 
-                    {totalUrls > 1 && (
-                        <Pressable
-                            ref={sourceButtonRef}
-                            onPress={onSourceSwitch}
-                            onFocus={() => setIsSourceFocused(true)}
-                            onBlur={() => setIsSourceFocused(false)}
-                            style={({ pressed }) => [
-                                styles.sourceButton,
-                                isSourceFocused && styles.sourceButtonFocused,
-                                pressed && { opacity: 0.8 }
-                            ]}
-                            focusable={true}
-                            hasTVPreferredFocus={false}
-                        >
-                            <Ionicons
-                                name="swap-horizontal"
-                                size={20}
-                                color={isSourceFocused ? "#fff" : "#ccc"}
-                            />
-                            <Text style={[
-                                styles.sourceText,
-                                isSourceFocused && styles.sourceTextFocused
-                            ]}>
-                                Fonte {currentUrlIndex + 1}/{totalUrls}
-                            </Text>
-                        </Pressable>
-                    )}
+                        {totalUrls > 1 && (
+                            <Pressable
+                                onPress={onSourceSwitch}
+                                onFocus={() => setIsSourceFocused(true)}
+                                onBlur={() => setIsSourceFocused(false)}
+                                style={[
+                                    styles.sourceButton,
+                                    isSourceFocused && styles.sourceButtonFocused
+                                ]}
+                                focusable={true}
+                            >
+                                <Ionicons
+                                    name="swap-horizontal"
+                                    size={18}
+                                    color={isSourceFocused ? "#1ed760" : "#aaa"}
+                                />
+                                <Text style={[
+                                    styles.sourceText,
+                                    isSourceFocused && styles.sourceTextFocused
+                                ]}>
+                                    Fonte {currentUrlIndex + 1}/{totalUrls}
+                                </Text>
+                            </Pressable>
+                        )}
+                    </View>
                 </View>
             </LinearGradient>
         </Animated.View>
@@ -148,107 +187,159 @@ export const PlayerOverlay = ({
 };
 
 const styles = StyleSheet.create({
-    bottomOverlay: {
+    overlay: {
         position: 'absolute',
-        bottom: 30,
-        left: 20,
-        right: 20,
-        alignItems: 'center',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 180,
     },
-    bottomBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        width: '100%',
-        paddingVertical: 15,
-        paddingHorizontal: 25,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    leftSection: {
+    gradient: {
         flex: 1,
+        justifyContent: 'flex-end',
+        paddingBottom: 25,
+        paddingHorizontal: 30,
+    },
+    content: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 15,
+        gap: 20,
     },
-    channelLogo: {
+    logoContainer: {
+        width: 80,
+        height: 80,
+        backgroundColor: 'rgba(30,30,30,0.9)',
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    logoContainerFocused: {
+        borderColor: '#1ed760',
+        transform: [{ scale: 1.05 }],
+    },
+    logo: {
         width: 60,
         height: 60,
     },
-    infoContainer: {
-        flexDirection: 'column',
+    infoSection: {
+        flex: 1,
         justifyContent: 'center',
-        alignItems: 'flex-start',
     },
     channelName: {
         color: '#fff',
-        fontSize: 18,
+        fontSize: 24,
         fontWeight: 'bold',
         marginBottom: 4,
     },
     programRow: {
         flexDirection: 'row',
-        alignItems: 'baseline',
-        marginBottom: 6,
+        alignItems: 'center',
+        gap: 10,
+        marginBottom: 8,
     },
     programTitle: {
         color: '#fff',
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '600',
+        flex: 1,
     },
     programTime: {
         color: '#aaa',
-        fontSize: 13,
-        fontWeight: '400',
-        marginLeft: 8,
+        fontSize: 14,
     },
-    progressBarContainer: {
-        width: '100%',
-        height: 4,
+    progressContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 8,
+    },
+    progressBar: {
+        flex: 1,
+        height: 6,
         backgroundColor: 'rgba(255,255,255,0.2)',
-        borderRadius: 2,
-        marginBottom: 6,
+        borderRadius: 3,
+        overflow: 'hidden',
     },
-    progressBarFill: {
+    progressFill: {
         height: '100%',
         backgroundColor: '#1ed760',
-        borderRadius: 2,
+        borderRadius: 3,
     },
-    nextProgramTitle: {
-        color: '#ccc',
-        fontSize: 13,
-    },
-    nextProgramTime: {
+    remainingTime: {
         color: '#888',
         fontSize: 12,
+        minWidth: 100,
+    },
+    nextProgramRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    nextLabel: {
+        color: '#666',
+        fontSize: 13,
+    },
+    nextTitle: {
+        color: '#999',
+        fontSize: 13,
+        flex: 1,
+    },
+    nextTime: {
+        color: '#666',
+        fontSize: 12,
+    },
+    liveBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(229, 9, 20, 0.2)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 4,
+        gap: 6,
+    },
+    liveDot: {
+        width: 8,
+        height: 8,
+        backgroundColor: '#e50914',
+        borderRadius: 4,
+    },
+    liveText: {
+        color: '#e50914',
+        fontSize: 13,
+        fontWeight: 'bold',
     },
     rightSection: {
         alignItems: 'flex-end',
-        justifyContent: 'center',
-        gap: 5,
+        gap: 10,
     },
-    clockText: {
+    clock: {
         color: '#fff',
-        fontSize: 20,
+        fontSize: 32,
         fontWeight: '300',
     },
     sourceButton: {
         flexDirection: 'row',
         alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.1)',
         paddingHorizontal: 12,
-        paddingVertical: 6,
+        paddingVertical: 8,
         borderRadius: 8,
+        gap: 6,
+        borderWidth: 2,
+        borderColor: 'transparent',
     },
     sourceButtonFocused: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: 'rgba(30, 215, 96, 0.15)',
+        borderColor: '#1ed760',
     },
     sourceText: {
-        color: '#ccc',
-        fontSize: 12,
-        marginLeft: 6,
+        color: '#aaa',
+        fontSize: 13,
     },
     sourceTextFocused: {
-        color: '#fff',
+        color: '#1ed760',
+        fontWeight: '600',
     },
 });

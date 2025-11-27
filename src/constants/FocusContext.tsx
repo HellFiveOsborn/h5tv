@@ -24,6 +24,7 @@ export const FocusProvider = ({ children }: FocusProviderProps) => {
     const [currentFocusArea, setCurrentFocusArea] = useState<FocusArea>('none');
 
     const setFocusArea = useCallback((area: FocusArea) => {
+        console.log('[FocusContext] Setting focus area:', area);
         setCurrentFocusArea(area);
     }, []);
 

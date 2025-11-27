@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef, useCallback, memo } from 'react';
-import { View, Text, StyleSheet, Image, Dimensions, FlatList, Animated, Pressable } from 'react-native';
+import { View, Text, StyleSheet, Image, Dimensions, FlatList, Animated, Platform, DeviceEventEmitter } from 'react-native';
 import { Colors } from '../constants/Colors';
 import { fetchGames } from '../services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusArea } from '../constants/FocusContext';
+import { TVFocusable } from './TVFocusable';
 
 // Import local assets
 const banner1 = require('../../assets/banner1.webp');
@@ -84,72 +85,91 @@ interface GameCardProps {
     onPress: () => void;
 }
 
-const GameCard = memo(({ item, index, isFocused, onFocus, onBlur, onPress }: GameCardProps) => {
+const GameCard = memo(({ item, index, isFocused: externalFocused, onFocus, onBlur, onPress, nextFocusDown, nextFocusLeft }: GameCardProps & { nextFocusDown?: number; nextFocusLeft?: number }) => {
     const isLive = item.status.toLowerCase().includes('vivo') || item.status.toLowerCase().includes('int');
     const bannerSource = BANNERS[index % BANNERS.length];
     const statusText = formatGameStatus(item.startTime, item.status, isLive);
 
     return (
-        <Pressable
+        <TVFocusable
             onFocus={() => onFocus(index)}
             onBlur={onBlur}
             onPress={onPress}
-            style={[styles.cardContainer, isFocused && styles.activeCardGlow]}
+            style={styles.cardContainer}
+            focusedStyle={styles.activeCardGlow}
+            nextFocusDown={nextFocusDown}
+            nextFocusLeft={nextFocusLeft}
         >
-            <Image
-                source={bannerSource}
-                style={styles.backgroundImage}
-                resizeMode="cover"
-            />
-            <LinearGradient
-                colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.9)']}
-                style={styles.cardGradient}
-            >
-                {/* Header: Status Badge (Top Left) */}
-                <View style={styles.headerRow}>
-                    <View style={[styles.statusBadge, isLive ? styles.liveBadge : styles.scheduledBadge]}>
-                        {isLive && <BlinkingDot />}
-                        <Text style={styles.statusText}>
-                            {statusText}
-                        </Text>
-                    </View>
-                </View>
+            {({ isFocused: internalFocused }) => {
+                const isFocused = externalFocused !== undefined ? externalFocused : internalFocused;
 
-                {/* Main Content: Logos & Score (Center) */}
-                <View style={styles.mainContent}>
-                    {/* Home Team Logo */}
-                    <Image source={{ uri: item.homeTeam.logo }} style={styles.logo} resizeMode="contain" />
+                return (
+                    <>
+                        <Image
+                            source={bannerSource}
+                            style={styles.backgroundImage}
+                            resizeMode="cover"
+                        />
+                        <LinearGradient
+                            colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.6)', 'rgba(0,0,0,0.9)']}
+                            style={styles.cardGradient}
+                        >
+                            {/* Header: Status Badge (Top Left) */}
+                            <View style={styles.headerRow}>
+                                <View style={[styles.statusBadge, isLive ? styles.liveBadge : styles.scheduledBadge]}>
+                                    {isLive && <BlinkingDot />}
+                                    <Text style={styles.statusText}>
+                                        {statusText}
+                                    </Text>
+                                </View>
+                            </View>
 
-                    {/* Score & Time */}
-                    <View style={styles.scoreContainer}>
-                        <Text style={styles.scoreText}>{item.score}</Text>
-                        {isLive && <Text style={styles.gameTimeText}>68'</Text>}
-                    </View>
+                            {/* Main Content: Logos & Score (Center) */}
+                            <View style={styles.mainContent}>
+                                {/* Home Team Logo */}
+                                <Image source={{ uri: item.homeTeam.logo }} style={styles.logo} resizeMode="contain" />
 
-                    {/* Away Team Logo */}
-                    <Image source={{ uri: item.awayTeam.logo }} style={styles.logo} resizeMode="contain" />
-                </View>
+                                {/* Score & Time */}
+                                <View style={styles.scoreContainer}>
+                                    <Text style={styles.scoreText}>{item.score}</Text>
+                                    {isLive && <Text style={styles.gameTimeText}>68'</Text>}
+                                </View>
 
-                {/* Footer: Team Names & Info (Bottom Center) */}
-                <View style={styles.footerContent}>
-                    <Text style={styles.versusText}>
-                        {item.homeTeam.name} <Text style={{ color: '#aaa' }}>x</Text> {item.awayTeam.name}
-                    </Text>
-                    <View style={styles.footerInfoRow}>
-                        <Text style={styles.channelText}>{item.channel}</Text>
-                        <Text style={styles.footerStatusText}> • {item.competition}</Text>
-                    </View>
-                </View>
-            </LinearGradient>
-        </Pressable>
+                                {/* Away Team Logo */}
+                                <Image source={{ uri: item.awayTeam.logo }} style={styles.logo} resizeMode="contain" />
+                            </View>
+
+                            {/* Footer: Team Names & Info (Bottom Center) */}
+                            <View style={styles.footerContent}>
+                                <Text style={styles.versusText}>
+                                    {item.homeTeam.name} <Text style={{ color: '#aaa' }}>x</Text> {item.awayTeam.name}
+                                </Text>
+                                <View style={styles.footerInfoRow}>
+                                    <Text style={styles.channelText}>{item.channel}</Text>
+                                    <Text style={styles.footerStatusText}> • {item.competition}</Text>
+                                </View>
+                            </View>
+                        </LinearGradient>
+                    </>
+                );
+            }}
+        </TVFocusable>
     );
 });
 
 interface GameSliderProps {
     onGamePress?: (channels: string[], gameTitle: string) => void;
+    nextFocusDown?: number;
+    nextFocusLeft?: number;
+    sidebarRef?: React.RefObject<any>;
 }
 
-export const GameSlider = ({ onGamePress }: GameSliderProps) => {
+export const GameSlider = ({ onGamePress, nextFocusDown, nextFocusLeft, sidebarRef }: GameSliderProps) => {
+    // Log nextFocusLeft changes
+    useEffect(() => {
+        console.log('[GameSlider] nextFocusLeft prop changed:', nextFocusLeft);
+    }, [nextFocusLeft]);
+
     const [games, setGames] = useState<GameData[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
@@ -160,7 +180,24 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
     const isNavigatingByFocusRef = useRef(false); // Track if navigation is via focus (D-pad)
     const AUTO_PLAY_DELAY = 5000; // 5 seconds between auto-advances
 
-    const { isAutoPlayAllowed, setFocusArea } = useFocusArea();
+    const { isAutoPlayAllowed, setFocusArea, currentFocusArea } = useFocusArea();
+    const isSliderFocusedRef = useRef(false);
+    const currentFocusAreaRef = useRef(currentFocusArea);
+    const focusedIndexRef = useRef(focusedIndex);
+
+    // Keep focusedIndexRef in sync
+    useEffect(() => {
+        focusedIndexRef.current = focusedIndex;
+    }, [focusedIndex]);
+
+    // Keep ref in sync with current focus area
+    useEffect(() => {
+        currentFocusAreaRef.current = currentFocusArea;
+    }, [currentFocusArea]);
+
+    // TV Key Event Handler for navigation - REMOVED
+    // We are now relying on native nextFocusLeft prop which is more robust
+    // The previous implementation was conflicting with native focus behavior
 
     useEffect(() => {
         loadGames();
@@ -168,14 +205,19 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
             if (autoPlayRef.current) {
                 clearInterval(autoPlayRef.current);
             }
+            if (blurTimeoutRef.current) {
+                clearTimeout(blurTimeoutRef.current);
+            }
         };
     }, []);
 
     // Auto-play effect - starts/stops based on global focus area
     useEffect(() => {
+        console.log('[GameSlider] AutoPlay effect - isAutoPlayAllowed:', isAutoPlayAllowed, 'games:', games.length, 'currentFocusArea:', currentFocusArea);
         if (games.length > 0 && isAutoPlayAllowed) {
             // Start auto-play when focus is on sidebar, search, or none
             if (!autoPlayRef.current) {
+                console.log('[GameSlider] Starting autoplay');
                 autoPlayRef.current = setInterval(() => {
                     setFocusedIndex((prev) => (prev + 1) % games.length);
                 }, AUTO_PLAY_DELAY);
@@ -183,6 +225,7 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
         } else {
             // Stop auto-play when focus is on slider or other content
             if (autoPlayRef.current) {
+                console.log('[GameSlider] Stopping autoplay');
                 clearInterval(autoPlayRef.current);
                 autoPlayRef.current = null;
             }
@@ -194,7 +237,7 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
                 autoPlayRef.current = null;
             }
         };
-    }, [games.length, isAutoPlayAllowed]);
+    }, [games.length, isAutoPlayAllowed, currentFocusArea]);
 
     // Scroll to focused index when it changes
     useEffect(() => {
@@ -207,22 +250,40 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
     }, [focusedIndex, games.length]);
 
     const handleCardFocus = useCallback((index: number) => {
+        console.log('[GameSlider] Card focused:', index);
+
         // Cancel any pending blur timeout (focus moved to another card)
         if (blurTimeoutRef.current) {
             clearTimeout(blurTimeoutRef.current);
             blurTimeoutRef.current = null;
         }
+
         // Mark that we're navigating via focus (D-pad), not swipe
         isNavigatingByFocusRef.current = true;
+        isSliderFocusedRef.current = true;
+
+        // Always set focus area to slider when a card receives focus
         setFocusArea('slider');
         setFocusedIndex(index);
     }, [setFocusArea]);
 
     const handleCardBlur = useCallback(() => {
-        // Set a timeout to reset focus area - will be cancelled if focus moves to another card
+        console.log('[GameSlider] Card blur, will check in 300ms');
+
+        // Set a timeout to check if focus left the slider entirely
         blurTimeoutRef.current = setTimeout(() => {
-            setFocusArea('none');
-        }, 150); // Small delay to allow focus to move to another card
+            console.log('[GameSlider] Blur timeout check, isSliderFocused:', isSliderFocusedRef.current);
+            // Only set to 'none' if no slider card currently has focus
+            // AND if the current focus area is still 'slider' (sidebar/search hasn't claimed it)
+            if (!isSliderFocusedRef.current && currentFocusAreaRef.current === 'slider') {
+                console.log('[GameSlider] Focus left slider, setting to none');
+                setFocusArea('none');
+            }
+        }, 300); // 300ms delay - enough time for next focus event to fire
+
+        // Mark slider as not focused
+        // If focus moves to another card, handleCardFocus will set this back to true before timeout fires
+        isSliderFocusedRef.current = false;
     }, [setFocusArea]);
 
     const handleCardPress = useCallback((item: GameData) => {
@@ -248,16 +309,33 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
         }
     };
 
-    const renderItem = useCallback(({ item, index }: { item: GameData; index: number }) => (
-        <GameCard
-            item={item}
-            index={index}
-            isFocused={index === focusedIndex}
-            onFocus={handleCardFocus}
-            onBlur={handleCardBlur}
-            onPress={() => handleCardPress(item)}
-        />
-    ), [focusedIndex, handleCardFocus, handleCardBlur, handleCardPress]);
+    const renderItem = useCallback(({ item, index }: { item: GameData; index: number }) => {
+        // Only pass nextFocusLeft to the first item
+        const shouldNavigateToSidebar = index === 0;
+        if (shouldNavigateToSidebar && nextFocusLeft) {
+            console.log('[GameSlider] First card rendering with nextFocusLeft:', nextFocusLeft);
+        }
+
+        // Use a key that includes navigation props to force remount when they change
+        const cardKey = `game-${item.id}-nav-${shouldNavigateToSidebar ? nextFocusLeft : 0}-${nextFocusDown || 0}`;
+
+        return (
+            <View style={styles.cardWrapper} key={cardKey}>
+                <GameCard
+                    item={item}
+                    index={index}
+                    isFocused={index === focusedIndex}
+                    onFocus={handleCardFocus}
+                    onBlur={handleCardBlur}
+                    onPress={() => handleCardPress(item)}
+                    nextFocusDown={nextFocusDown}
+                    // IMPORTANT: Pass nextFocusLeft explicitly to the first card
+                    // This ensures the native focus engine knows where to go when pressing left
+                    nextFocusLeft={shouldNavigateToSidebar ? nextFocusLeft : undefined}
+                />
+            </View>
+        );
+    }, [focusedIndex, handleCardFocus, handleCardBlur, handleCardPress, nextFocusDown, nextFocusLeft]);
 
     if (loading) {
         return (
@@ -281,48 +359,51 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
         <View style={styles.container}>
             <Text style={styles.sectionTitle}>Jogos de Hoje • Ao Vivo e Em Breve</Text>
 
-            <FlatList
-                ref={flatListRef}
-                data={games}
-                renderItem={renderItem}
-                keyExtractor={(item) => item.id.toString()}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.listContent}
-                // Scroll behavior
-                bounces={false}
-                overScrollMode="never"
-                scrollEnabled={true}
-                snapToInterval={SNAP_INTERVAL}
-                snapToAlignment="start"
-                decelerationRate="fast"
-                disableIntervalMomentum={true}
-                // Performance
-                removeClippedSubviews={false}
-                getItemLayout={(data, index) => (
-                    { length: SNAP_INTERVAL, offset: SNAP_INTERVAL * index, index }
-                )}
-                // Event handlers
-                onScrollBeginDrag={() => {
-                    // Only set focus area for swipe gestures
-                    isNavigatingByFocusRef.current = false;
-                    setFocusArea('slider');
-                }}
-                onMomentumScrollEnd={(event) => {
-                    // Only update focusedIndex if this was a swipe gesture, not D-pad navigation
-                    if (!isNavigatingByFocusRef.current) {
-                        const newIndex = Math.round(event.nativeEvent.contentOffset.x / SNAP_INTERVAL);
-                        const clampedIndex = Math.max(0, Math.min(newIndex, games.length - 1));
-                        setFocusedIndex(clampedIndex);
-                        // Resume auto-play after scroll ends
-                        setTimeout(() => {
-                            setFocusArea('none');
-                        }, 1000);
-                    }
-                    // Reset the flag after scroll ends
-                    isNavigatingByFocusRef.current = false;
-                }}
-            />
+            <View style={styles.sliderContainer}>
+                <FlatList
+                    ref={flatListRef}
+                    data={games}
+                    renderItem={renderItem}
+                    keyExtractor={(item) => item.id.toString()}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.listContent}
+                    style={styles.flatList}
+                    // Scroll behavior
+                    bounces={false}
+                    overScrollMode="never"
+                    scrollEnabled={true}
+                    snapToInterval={SNAP_INTERVAL}
+                    snapToAlignment="start"
+                    decelerationRate="fast"
+                    disableIntervalMomentum={true}
+                    // Force re-render when navigation props change
+                    extraData={{ focusedIndex, nextFocusLeft, nextFocusDown }}
+                    // Performance
+                    removeClippedSubviews={false}
+                    getItemLayout={(data, index) => (
+                        { length: SNAP_INTERVAL, offset: SNAP_INTERVAL * index, index }
+                    )}
+                    // Event handlers
+                    onScrollBeginDrag={() => {
+                        // Only set focus area for swipe gestures
+                        isNavigatingByFocusRef.current = false;
+                        setFocusArea('slider');
+                    }}
+                    onMomentumScrollEnd={(event) => {
+                        // Only update focusedIndex if this was a swipe gesture, not D-pad navigation
+                        if (!isNavigatingByFocusRef.current) {
+                            const newIndex = Math.round(event.nativeEvent.contentOffset.x / SNAP_INTERVAL);
+                            const clampedIndex = Math.max(0, Math.min(newIndex, games.length - 1));
+                            setFocusedIndex(clampedIndex);
+                            // Note: We don't reset focus area here anymore
+                            // Autoplay will resume naturally when focus leaves the slider
+                        }
+                        // Reset the flag after scroll ends
+                        isNavigatingByFocusRef.current = false;
+                    }}
+                />
+            </View>
 
             <View style={styles.dotsContainer}>
                 {/* Fixed 3 dots indicator: left (has previous), center (active), right (has next) */}
@@ -336,11 +417,17 @@ export const GameSlider = ({ onGamePress }: GameSliderProps) => {
 
 const styles = StyleSheet.create({
     container: {
-        marginVertical: 20,
+        marginVertical: 10,
         width: '100%',
     },
+    sliderContainer: {
+        // Remove overflow visible - use clip to prevent overlapping sidebar
+    },
+    flatList: {
+        // Keep default overflow behavior
+    },
     centerContainer: {
-        height: 300,
+        height: 280,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -352,30 +439,35 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontSize: 18,
         fontWeight: '600',
-        marginLeft: 40, // Match layout padding
+        marginLeft: 40,
         marginBottom: 15,
         letterSpacing: 0.5,
     },
     listContent: {
-        paddingHorizontal: 40, // Start padding
+        paddingHorizontal: 40,
+        paddingVertical: 5,
+    },
+    cardWrapper: {
+        marginRight: SPACING,
     },
     cardContainer: {
         width: CARD_WIDTH,
-        height: 300,
+        height: 280,
         borderRadius: 12,
         overflow: 'hidden',
         backgroundColor: '#1a1a1a',
-        borderWidth: 2,
+        borderWidth: 3,
         borderColor: 'transparent',
-        marginRight: SPACING,
     },
     activeCardGlow: {
         borderColor: '#00ff88',
+        backgroundColor: '#222',
+        // No transform scale - use only border and shadow
         shadowColor: '#00ff88',
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 15,
-        elevation: 10,
+        shadowOpacity: 0.4,
+        shadowRadius: 10,
+        elevation: 8,
     },
     backgroundImage: {
         ...StyleSheet.absoluteFillObject,

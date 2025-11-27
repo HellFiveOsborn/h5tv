@@ -1,19 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Pressable, BackHandler, findNodeHandle, PressableProps, useWindowDimensions } from 'react-native';
+import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
+import { View, Text, StyleSheet, BackHandler, findNodeHandle, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../constants/Colors';
 import { useFocusArea } from '../constants/FocusContext';
+import { TVFocusable, TVFocusableRef, useTVFocusableGroup } from './TVFocusable';
 
-// Extended props for TV navigation (these exist at runtime on Android TV)
-interface TVPressableProps extends PressableProps {
-    hasTVPreferredFocus?: boolean;
-    nextFocusUp?: number;
-    nextFocusDown?: number;
-    nextFocusLeft?: number;
-    nextFocusRight?: number;
+export interface SidebarRef {
+    getFirstItemNodeHandle: () => number | null;
+    focusFirstItem: () => void;
 }
 
-const TVPressable = Pressable as React.ComponentType<TVPressableProps & React.RefAttributes<View>>;
+// Static ID for focus navigation
+export const SIDEBAR_FIRST_ITEM_ID = 'sidebar-first-item';
 
 interface SidebarProps {
     activeRoute: string;
@@ -21,15 +19,9 @@ interface SidebarProps {
     contentRef?: React.RefObject<any>;
 }
 
-export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) => {
-    const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
-    const itemRefs = useRef<(View | null)[]>([]);
-    const [nodeHandles, setNodeHandles] = useState<(number | null)[]>([]);
+export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeRoute, onNavigate, contentRef }, ref) => {
     const { setFocusArea } = useFocusArea();
     const { height: screenHeight } = useWindowDimensions();
-
-    // Determine if screen is small (less than 600px height, like 720p TV)
-    const isSmallScreen = screenHeight < 600;
 
     const menuItems = [
         { icon: 'home', label: 'Início', route: 'home' },
@@ -38,14 +30,26 @@ export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) =
         { icon: 'power', label: 'Sair', route: 'logout', color: '#e50914' },
     ];
 
-    useEffect(() => {
-        // Delay to ensure refs are mounted
-        const timer = setTimeout(() => {
-            const handles = itemRefs.current.map(ref => ref ? findNodeHandle(ref) : null);
-            setNodeHandles(handles);
-        }, 100);
-        return () => clearTimeout(timer);
-    }, []);
+    // Usar hook para gerenciar grupo de focusables
+    const { setRef, getNavigation, nodeHandles, refs } = useTVFocusableGroup(menuItems.length);
+
+    // Expose the first item's node handle and focus method via ref
+    useImperativeHandle(ref, () => ({
+        getFirstItemNodeHandle: () => {
+            const handle = refs.current[0]?.getNodeHandle() ?? null;
+            console.log('[Sidebar] getFirstItemNodeHandle called, result:', handle);
+            return handle;
+        },
+        focusFirstItem: () => {
+            console.log('[Sidebar] focusFirstItem called');
+            if (refs.current[0]?.focus) {
+                refs.current[0].focus();
+            }
+        },
+    }), []);
+
+    // Determine if screen is small (less than 600px height, like 720p TV)
+    const isSmallScreen = screenHeight < 600;
 
     const handleNavigate = (route: string) => {
         if (route === 'logout') {
@@ -85,48 +89,52 @@ export const Sidebar = ({ activeRoute, onNavigate, contentRef }: SidebarProps) =
     return (
         <View style={[styles.container, dynamicStyles.container]}>
             <View style={[styles.menuItems, dynamicStyles.menuItems]}>
-                {menuItems.map((item, index) => (
-                    <TVPressable
-                        key={index}
-                        ref={(ref) => { itemRefs.current[index] = ref; }}
-                        onPress={() => handleNavigate(item.route)}
-                        onFocus={() => {
-                            setFocusedIndex(index);
-                            setFocusArea('sidebar');
-                        }}
-                        onBlur={() => setFocusedIndex(null)}
-                        style={[
-                            styles.menuItem,
-                            dynamicStyles.menuItem,
-                            focusedIndex === index && styles.menuItemFocused
-                        ]}
-                        // TV Navigation Props
-                        hasTVPreferredFocus={index === 0}
-                        nextFocusUp={index > 0 ? nodeHandles[index - 1] ?? undefined : undefined}
-                        nextFocusDown={index < menuItems.length - 1 ? nodeHandles[index + 1] ?? undefined : undefined}
-                        nextFocusRight={getContentNodeHandle()}
-                    >
-                        <Ionicons
-                            name={item.icon as any}
-                            size={dynamicStyles.icon.size}
-                            color={item.color || (activeRoute === item.route ? Colors.primary : '#888')}
-                        />
-                        <Text
-                            style={[
-                                styles.menuText,
-                                activeRoute === item.route && styles.activeText,
-                                item.color ? { color: item.color } : null,
-                                focusedIndex === index && styles.focusedText
-                            ]}
+                {menuItems.map((item, index) => {
+                    const isActive = activeRoute === item.route;
+                    const navigation = getNavigation(index);
+
+                    return (
+                        <TVFocusable
+                            key={index}
+                            ref={setRef(index)}
+                            isActive={isActive}
+                            onPress={() => handleNavigate(item.route)}
+                            onFocus={() => setFocusArea('sidebar')}
+                            hasTVPreferredFocus={index === 0}
+                            nextFocusUp={navigation.nextFocusUp}
+                            nextFocusDown={navigation.nextFocusDown}
+                            nextFocusRight={getContentNodeHandle()}
+                            nativeID={index === 0 ? SIDEBAR_FIRST_ITEM_ID : undefined}
+                            style={[styles.menuItem, dynamicStyles.menuItem]}
+                            focusedStyle={styles.menuItemFocused}
+                            activeStyle={styles.menuItemActive}
                         >
-                            {item.label}
-                        </Text>
-                    </TVPressable>
-                ))}
+                            {({ isFocused, isActive: isItemActive }) => (
+                                <>
+                                    <Ionicons
+                                        name={item.icon as any}
+                                        size={dynamicStyles.icon.size}
+                                        color={item.color || (isItemActive ? Colors.primary : (isFocused ? '#fff' : '#888'))}
+                                    />
+                                    <Text
+                                        style={[
+                                            styles.menuText,
+                                            isItemActive && styles.activeText,
+                                            item.color ? { color: item.color } : null,
+                                            isFocused && !isItemActive && styles.focusedText
+                                        ]}
+                                    >
+                                        {item.label}
+                                    </Text>
+                                </>
+                            )}
+                        </TVFocusable>
+                    );
+                })}
             </View>
         </View>
     );
-};
+});
 
 const styles = StyleSheet.create({
     container: {
@@ -136,6 +144,8 @@ const styles = StyleSheet.create({
         borderRightColor: 'rgba(255,255,255,0.05)',
         alignItems: 'center',
         justifyContent: 'center',
+        zIndex: 100, // Ensure sidebar is always on top
+        elevation: 10, // Android elevation
     },
     menuItems: {
         flex: 1,
@@ -146,14 +156,21 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         gap: 4,
         borderRadius: 8,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    menuItemActive: {
+        backgroundColor: 'rgba(30, 215, 96, 0.1)',
+        transform: [{ scale: 1.1 }],
+        // borderColor: 'rgba(30, 215, 96, 0.3)',
     },
     menuItemFocused: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        transform: [{ scale: 1.1 }],
+        // backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        borderColor: 'rgba(30, 215, 96, 0.3)',
     },
     menuText: {
         color: '#888',
-        fontSize: 10,
+        fontSize: 12,
         textAlign: 'center',
         marginTop: 4,
     },
@@ -166,3 +183,5 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
 });
+
+Sidebar.displayName = 'Sidebar';

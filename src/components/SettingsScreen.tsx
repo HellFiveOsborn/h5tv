@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Switch, Pressable, Alert, ActivityIndicator, ScrollView, Platform, DevSettings } from 'react-native';
+import { View, Text, StyleSheet, Switch, Alert, ActivityIndicator, ScrollView, Platform, DevSettings } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Colors } from '../constants/Colors';
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { StorageKeys } from '../constants/StorageKeys';
 import { checkForUpdate, UpdateInfo } from '../services/updateService';
 import { UpdateDialog } from './UpdateDialog';
+import { TVFocusable } from './TVFocusable';
 
 interface SettingRowProps {
     label: string;
@@ -17,41 +18,38 @@ interface SettingRowProps {
 }
 
 const SettingRow = ({ label, description, icon, value, onToggle }: SettingRowProps) => {
-    const [isFocused, setIsFocused] = useState(false);
-
     return (
-        <Pressable
-            style={({ pressed }) => [
-                styles.settingItem,
-                (pressed || isFocused) && styles.settingItemFocused
-            ]}
+        <TVFocusable
             onPress={() => onToggle(!value)}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            focusable={true}
+            style={styles.settingItem}
+            focusedStyle={styles.settingItemFocused}
         >
-            <View style={styles.settingInfo}>
-                <View style={styles.settingLabelContainer}>
-                    <Ionicons
-                        name={icon}
-                        size={20}
-                        color={isFocused ? '#fff' : Colors.primary}
-                        style={styles.settingIcon}
+            {({ isFocused }) => (
+                <>
+                    <View style={styles.settingInfo}>
+                        <View style={styles.settingLabelContainer}>
+                            <Ionicons
+                                name={icon}
+                                size={20}
+                                color={isFocused ? '#fff' : Colors.primary}
+                                style={styles.settingIcon}
+                            />
+                            <Text style={[styles.settingLabel, isFocused && styles.textFocused]}>{label}</Text>
+                        </View>
+                        <Text style={[styles.settingDescription, isFocused && styles.textDescriptionFocused]}>
+                            {description}
+                        </Text>
+                    </View>
+                    <Switch
+                        trackColor={{ false: '#3a3a3a', true: 'rgba(0, 255, 136, 0.5)' }}
+                        thumbColor={value ? Colors.primary : '#b0b0b0'}
+                        ios_backgroundColor="#3e3e3e"
+                        onValueChange={onToggle}
+                        value={value}
                     />
-                    <Text style={[styles.settingLabel, isFocused && styles.textFocused]}>{label}</Text>
-                </View>
-                <Text style={[styles.settingDescription, isFocused && styles.textDescriptionFocused]}>
-                    {description}
-                </Text>
-            </View>
-            <Switch
-                trackColor={{ false: '#3a3a3a', true: 'rgba(0, 255, 136, 0.5)' }}
-                thumbColor={value ? Colors.primary : '#b0b0b0'}
-                ios_backgroundColor="#3e3e3e"
-                onValueChange={onToggle}
-                value={value}
-            />
-        </Pressable>
+                </>
+            )}
+        </TVFocusable>
     );
 };
 
@@ -62,7 +60,6 @@ export const SettingsScreen = () => {
     const [checkingUpdate, setCheckingUpdate] = useState(false);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [updateDialogVisible, setUpdateDialogVisible] = useState(false);
-    const [checkUpdateFocused, setCheckUpdateFocused] = useState(false);
     const appVersion = Constants.expoConfig?.version || '1.0.0';
 
     useEffect(() => {
@@ -118,7 +115,6 @@ export const SettingsScreen = () => {
         }
     };
 
-    const [clearCacheFocused, setClearCacheFocused] = useState(false);
 
     const handleCheckUpdate = async () => {
         setCheckingUpdate(true);
@@ -224,40 +220,38 @@ export const SettingsScreen = () => {
             </View>
 
             <View style={styles.section}>
-                <Pressable
-                    style={({ pressed }) => [
-                        styles.actionButton,
-                        pressed && styles.actionButtonPressed,
-                        checkUpdateFocused && styles.actionButtonFocused
-                    ]}
+                <TVFocusable
                     onPress={handleCheckUpdate}
-                    onFocus={() => setCheckUpdateFocused(true)}
-                    onBlur={() => setCheckUpdateFocused(false)}
-                    focusable={true}
                     disabled={checkingUpdate}
+                    style={styles.actionButton}
+                    focusedStyle={styles.actionButtonFocused}
                 >
-                    <View style={styles.buttonContent}>
-                        {checkingUpdate ? (
-                            <ActivityIndicator size={22} color={Colors.primary} style={styles.buttonIcon} />
-                        ) : (
-                            <Ionicons
-                                name="cloud-download-outline"
-                                size={22}
-                                color={checkUpdateFocused ? '#fff' : Colors.primary}
-                                style={styles.buttonIcon}
-                            />
-                        )}
-                        <View>
-                            <Text style={[styles.actionButtonText, checkUpdateFocused && styles.textFocused]}>
-                                {checkingUpdate ? 'Verificando...' : 'Verificar Atualizações'}
-                            </Text>
-                            <Text style={[styles.actionButtonSubtext, checkUpdateFocused && styles.textDescriptionFocused]}>
-                                Buscar nova versão do aplicativo
-                            </Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={checkUpdateFocused ? "#fff" : "#666"} />
-                </Pressable>
+                    {({ isFocused }) => (
+                        <>
+                            <View style={styles.buttonContent}>
+                                {checkingUpdate ? (
+                                    <ActivityIndicator size={22} color={Colors.primary} style={styles.buttonIcon} />
+                                ) : (
+                                    <Ionicons
+                                        name="cloud-download-outline"
+                                        size={22}
+                                        color={isFocused ? '#fff' : Colors.primary}
+                                        style={styles.buttonIcon}
+                                    />
+                                )}
+                                <View>
+                                    <Text style={[styles.actionButtonText, isFocused && styles.textFocused]}>
+                                        {checkingUpdate ? 'Verificando...' : 'Verificar Atualizações'}
+                                    </Text>
+                                    <Text style={[styles.actionButtonSubtext, isFocused && styles.textDescriptionFocused]}>
+                                        Buscar nova versão do aplicativo
+                                    </Text>
+                                </View>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color={isFocused ? "#fff" : "#666"} />
+                        </>
+                    )}
+                </TVFocusable>
             </View>
 
             <View style={styles.sectionTitleContainer}>
@@ -265,26 +259,24 @@ export const SettingsScreen = () => {
             </View>
 
             <View style={styles.section}>
-                <Pressable
-                    style={({ pressed }) => [
-                        styles.clearCacheButton,
-                        pressed && styles.clearCacheButtonPressed,
-                        clearCacheFocused && styles.clearCacheButtonFocused
-                    ]}
+                <TVFocusable
                     onPress={clearCache}
-                    onFocus={() => setClearCacheFocused(true)}
-                    onBlur={() => setClearCacheFocused(false)}
-                    focusable={true}
+                    style={styles.clearCacheButton}
+                    focusedStyle={styles.clearCacheButtonFocused}
                 >
-                    <View style={styles.buttonContent}>
-                        <Ionicons name="trash-bin-outline" size={22} color={clearCacheFocused ? "#ff8888" : "#ff4444"} style={styles.buttonIcon} />
-                        <View>
-                            <Text style={[styles.clearCacheText, clearCacheFocused && styles.textFocused]}>Limpar Cache</Text>
-                            <Text style={[styles.clearCacheSubtext, clearCacheFocused && styles.textDescriptionFocused]}>Apagar dados temporários e recarregar</Text>
-                        </View>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color={clearCacheFocused ? "#fff" : "#666"} />
-                </Pressable>
+                    {({ isFocused }) => (
+                        <>
+                            <View style={styles.buttonContent}>
+                                <Ionicons name="trash-bin-outline" size={22} color={isFocused ? "#ff8888" : "#ff4444"} style={styles.buttonIcon} />
+                                <View>
+                                    <Text style={[styles.clearCacheText, isFocused && styles.textFocused]}>Limpar Cache</Text>
+                                    <Text style={[styles.clearCacheSubtext, isFocused && styles.textDescriptionFocused]}>Apagar dados temporários e recarregar</Text>
+                                </View>
+                            </View>
+                            <Ionicons name="chevron-forward" size={20} color={isFocused ? "#fff" : "#666"} />
+                        </>
+                    )}
+                </TVFocusable>
             </View>
 
             <View style={styles.footer}>

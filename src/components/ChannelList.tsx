@@ -7,18 +7,11 @@ import { fetchChannels, Channel, Category } from '../services/channelService';
 import { fetchCurrentProgram, ProgramInfo } from '../services/guideService';
 import { Ionicons } from '@expo/vector-icons';
 import { TopBar } from './TopBar';
-import { ChannelCard } from './ChannelCard';
+import { ChannelListItem } from './ChannelListItem';
 import { SearchOverlay } from './SearchOverlay';
+import { TVFocusable } from './TVFocusable';
 
 const { width } = Dimensions.get('window');
-
-// Calculate card dimensions for FlatList optimization
-const CARD_ASPECT_RATIO = 1.6;
-const NUM_COLUMNS = 2;
-const CARD_GAP = 20;
-const CONTAINER_PADDING = 40;
-const CARD_WIDTH = (width - 100 - CONTAINER_PADDING * 2 - 250 - 20 - CARD_GAP) / NUM_COLUMNS; // Account for sidebar, categories, gaps
-const CARD_HEIGHT = CARD_WIDTH / CARD_ASPECT_RATIO;
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -36,41 +29,46 @@ interface ChannelListProps {
 const CategoryItem = memo(({
     category,
     isSelected,
-    isFocused,
     onPress,
     onFocus,
-    onBlur
+    onBlur,
+    hasTVPreferredFocus = false
 }: {
     category: Category;
     isSelected: boolean;
-    isFocused: boolean;
     onPress: () => void;
-    onFocus: () => void;
-    onBlur: () => void;
+    onFocus?: () => void;
+    onBlur?: () => void;
+    hasTVPreferredFocus?: boolean;
 }) => (
-    <Pressable
+    <TVFocusable
+        isActive={isSelected}
         onPress={onPress}
         onFocus={onFocus}
         onBlur={onBlur}
-        style={[
-            styles.categoryItem,
-            isSelected && styles.categorySelected,
-            isFocused && styles.categoryFocused
-        ]}
+        hasTVPreferredFocus={hasTVPreferredFocus}
+        style={styles.categoryItem}
+        activeStyle={styles.categorySelected}
+        focusedStyle={styles.categoryFocused}
     >
-        <Ionicons
-            name={getIconForCategory(category.id)}
-            size={20}
-            color={isSelected ? '#fff' : '#888'}
-            style={styles.categoryIcon}
-        />
-        <Text style={[
-            styles.categoryText,
-            isSelected && styles.categoryTextSelected
-        ]}>
-            {category.name}
-        </Text>
-    </Pressable>
+        {({ isFocused, isActive }) => (
+            <>
+                <Ionicons
+                    name={getIconForCategory(category.id)}
+                    size={20}
+                    color={isActive ? '#fff' : (isFocused ? '#fff' : '#888')}
+                    style={styles.categoryIcon}
+                />
+                <Text style={[
+                    styles.categoryText,
+                    isActive && styles.categoryTextSelected,
+                    isFocused && !isActive && styles.categoryTextFocused
+                ]}>
+                    {category.name}
+                </Text>
+            </>
+        )}
+    </TVFocusable>
 ));
 
 CategoryItem.displayName = 'CategoryItem';
@@ -185,27 +183,19 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
         return categories.find(c => c.id === id)?.name || 'Canais';
     }, [categories]);
 
-    // Optimized FlatList item renderer
+    // Optimized FlatList item renderer for vertical carousel
     const renderChannelItem = useCallback(({ item }: { item: Channel }) => (
-        <ChannelCard
+        <ChannelListItem
             channel={item}
             programInfo={programInfos[item.id]}
-            isFocused={focusedChannel === item.id}
             onPress={() => handleChannelPress(item)}
             onFocus={() => setFocusedChannel(item.id)}
             onBlur={() => setFocusedChannel(null)}
         />
-    ), [programInfos, focusedChannel, handleChannelPress]);
+    ), [programInfos, handleChannelPress]);
 
     // Key extractor for FlatList
     const keyExtractor = useCallback((item: Channel) => item.id, []);
-
-    // Get item layout for FlatList optimization
-    const getItemLayout = useCallback((data: ArrayLike<Channel> | null | undefined, index: number) => ({
-        length: CARD_HEIGHT + CARD_GAP,
-        offset: (CARD_HEIGHT + CARD_GAP) * Math.floor(index / NUM_COLUMNS),
-        index,
-    }), []);
 
     if (loading) {
         return (
@@ -251,15 +241,15 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
                     <View style={styles.categoriesSidebar}>
                         <Text style={styles.sectionTitle}>Categorias</Text>
                         <ScrollView showsVerticalScrollIndicator={false}>
-                            {categories.map((category) => (
+                            {categories.map((category, index) => (
                                 <CategoryItem
                                     key={category.id}
                                     category={category}
                                     isSelected={selectedCategory === category.id}
-                                    isFocused={focusedCategory === category.id}
                                     onPress={() => handleCategorySelect(category.id)}
                                     onFocus={() => setFocusedCategory(category.id)}
                                     onBlur={() => setFocusedCategory(null)}
+                                    hasTVPreferredFocus={index === 0}
                                 />
                             ))}
                         </ScrollView>
@@ -277,15 +267,12 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
                             data={filteredChannels}
                             renderItem={renderChannelItem}
                             keyExtractor={keyExtractor}
-                            numColumns={NUM_COLUMNS}
-                            columnWrapperStyle={styles.gridRow}
-                            contentContainerStyle={styles.gridContent}
+                            contentContainerStyle={styles.listContent}
                             showsVerticalScrollIndicator={false}
                             removeClippedSubviews={true}
                             maxToRenderPerBatch={10}
                             windowSize={5}
-                            initialNumToRender={8}
-                            getItemLayout={getItemLayout}
+                            initialNumToRender={10}
                             extraData={focusedChannel}
                             ListEmptyComponent={
                                 <View style={styles.emptyContainer}>
@@ -395,33 +382,28 @@ const styles = StyleSheet.create({
         color: '#fff',
         fontWeight: 'bold',
     },
+    categoryTextFocused: {
+        color: '#fff',
+    },
 
-    // Channels Grid
+    // Channels List (Vertical Carousel)
     channelsContainer: {
         backgroundColor: 'rgba(0, 0, 0, 0.05)',
         flex: 1,
-        padding: 20,
-        overflow: 'visible',
+        paddingHorizontal: 15,
+        paddingTop: 10,
         marginTop: -70,
     },
     header: {
-        marginBottom: 15,
+        marginBottom: 10,
     },
     subHeader: {
         color: '#888',
-        fontSize: 18,
+        fontSize: 16,
     },
-    gridContent: {
+    listContent: {
         paddingBottom: 50,
-        paddingTop: 10,
-        paddingHorizontal: 5,
-        overflow: 'visible',
-    },
-    gridRow: {
-        justifyContent: 'flex-start',
-        gap: CARD_GAP,
-        marginBottom: CARD_GAP,
-        overflow: 'visible',
+        paddingTop: 5,
     },
     emptyContainer: {
         flex: 1,

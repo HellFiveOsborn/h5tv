@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Channel } from '../src/services/channelService';
 import { fetchCurrentProgram, ProgramInfo } from '../src/services/guideService';
 import { syncTimeWithServer } from '../src/services/timeService';
+import { detectStreamType, extractStreamUrl } from '../src/utils/streamInterceptor';
 import { ChannelListOverlay } from '../src/components/ChannelListOverlay';
 import { StreamWebView } from '../src/components/player/StreamWebView';
 import { PlayerOverlay } from '../src/components/player/PlayerOverlay';
@@ -102,6 +103,17 @@ export default function StreamScreen() {
             const now = Date.now();
             const DOUBLE_PRESS_DELAY = 300; // ms
 
+            // Check double press FIRST - always go back on double press
+            if (now - lastBackPress.current < DOUBLE_PRESS_DELAY) {
+                // Double press detected - Go back to channel list screen
+                router.back();
+                return true;
+            }
+
+            // Update last press time
+            lastBackPress.current = now;
+
+            // Single press handling
             if (channelListVisible) {
                 setChannelListVisible(false);
                 return true;
@@ -112,15 +124,9 @@ export default function StreamScreen() {
                 return true;
             }
 
-            if (now - lastBackPress.current < DOUBLE_PRESS_DELAY) {
-                // Double press detected - Exit
-                return false; // Let default behavior happen (exit)
-            } else {
-                lastBackPress.current = now;
-                // Single press - Show Channel List
-                setChannelListVisible(true);
-                return true;
-            }
+            // Single press with nothing visible - Show Channel List
+            setChannelListVisible(true);
+            return true;
         };
 
         const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
@@ -212,16 +218,27 @@ export default function StreamScreen() {
                     ) : null}
 
                     {/* Native Player */}
-                    {!webViewVisible && streamData ? (
-                        <Video
-                            style={styles.video}
-                            source={{ uri: streamData.url, headers: streamData.headers }}
-                            resizeMode={ResizeMode.CONTAIN}
-                            isLooping
-                            shouldPlay
-                            onError={(e) => console.log('Video Error:', e)}
-                        />
-                    ) : null}
+                    {!webViewVisible && streamData ? (() => {
+                        // Extrai URL real do stream (caso esteja em parâmetro de query string)
+                        const realStreamUrl = extractStreamUrl(streamData.url);
+                        const streamType = detectStreamType(realStreamUrl);
+                        console.log('[Video] Playing:', realStreamUrl, 'Type:', streamType);
+
+                        return (
+                            <Video
+                                style={styles.video}
+                                source={{
+                                    uri: realStreamUrl,
+                                    headers: streamData.headers,
+                                    overrideFileExtensionAndroid: streamType
+                                }}
+                                resizeMode={ResizeMode.CONTAIN}
+                                isLooping
+                                shouldPlay
+                                onError={(e) => console.log('Video Error:', e)}
+                            />
+                        );
+                    })() : null}
                 </View>
             </TouchableWithoutFeedback>
 

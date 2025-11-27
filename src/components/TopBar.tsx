@@ -1,8 +1,9 @@
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { syncTimeWithServer } from '../services/timeService';
 import { SearchInput } from './SearchInput';
+import { TVFocusable } from './TVFocusable';
 
 
 interface TopBarProps {
@@ -81,21 +82,31 @@ export const TopBar = memo(({
             {/* Search Bar & Back Button */}
             <View style={styles.leftContainer}>
                 {onBack && (
-                    <TouchableOpacity onPress={onBack} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={28} color="#fff" />
-                    </TouchableOpacity>
+                    <TVFocusable
+                        onPress={onBack}
+                        style={styles.backButton}
+                        focusedStyle={styles.backButtonFocused}
+                    >
+                        {({ isFocused }) => (
+                            <Ionicons name="arrow-back" size={28} color={isFocused ? '#00ff88' : '#fff'} />
+                        )}
+                    </TVFocusable>
                 )}
                 {showSearch && (
                     onSearchPress ? (
-                        <TouchableOpacity
-                            style={styles.searchTrigger}
+                        <TVFocusable
                             onPress={onSearchPress}
-                            activeOpacity={0.7}
+                            style={styles.searchTrigger}
+                            focusedStyle={styles.searchTriggerFocused}
                         >
-                            <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
-                            <Text style={styles.searchPlaceholder}>Buscar canal ou partida...</Text>
-                            <Ionicons name="mic" size={20} color="#00ff88" />
-                        </TouchableOpacity>
+                            {({ isFocused }) => (
+                                <>
+                                    <Ionicons name="search" size={20} color={isFocused ? '#00ff88' : '#888'} style={styles.searchIcon} />
+                                    <Text style={[styles.searchPlaceholder, isFocused && styles.searchPlaceholderFocused]}>Buscar canal ou partida...</Text>
+                                    <Ionicons name="mic" size={20} color="#00ff88" />
+                                </>
+                            )}
+                        </TVFocusable>
                     ) : (
                         <SearchInput
                             value={searchValue}
@@ -135,7 +146,14 @@ const styles = StyleSheet.create({
     },
     backButton: {
         marginRight: 20,
-        padding: 5,
+        padding: 10,
+        borderRadius: 25,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    backButtonFocused: {
+        borderColor: '#00ff88',
+        backgroundColor: 'rgba(0, 255, 136, 0.1)',
     },
     searchTrigger: {
         flex: 1,
@@ -145,6 +163,12 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         paddingHorizontal: 15,
         height: 50,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    searchTriggerFocused: {
+        borderColor: '#00ff88',
+        backgroundColor: 'rgba(0, 255, 136, 0.1)',
     },
     searchIcon: {
         marginRight: 10,
@@ -153,6 +177,9 @@ const styles = StyleSheet.create({
         flex: 1,
         color: '#666',
         fontSize: 16,
+    },
+    searchPlaceholderFocused: {
+        color: '#888',
     },
     clockContainer: {
         alignItems: 'flex-end',

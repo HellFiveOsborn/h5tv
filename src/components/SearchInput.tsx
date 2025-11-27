@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useRef } from 'react';
+import React, { memo, useCallback, useRef, useState } from 'react';
 import { View, TextInput, StyleSheet, Pressable, ActivityIndicator, TextInputProps } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusArea } from '../constants/FocusContext';
@@ -29,12 +29,15 @@ export const SearchInput = memo(({
 }: SearchInputProps) => {
     const { setFocusArea } = useFocusArea();
     const inputRef = useRef<TextInput>(null);
+    const [isFocused, setIsFocused] = useState(false);
 
     const handleFocus = useCallback(() => {
+        setIsFocused(true);
         setFocusArea('search');
     }, [setFocusArea]);
 
     const handleBlur = useCallback(() => {
+        setIsFocused(false);
         setFocusArea('none');
     }, [setFocusArea]);
 
@@ -47,11 +50,11 @@ export const SearchInput = memo(({
     const showClearButton = value.length > 0;
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, isFocused && styles.containerFocused]}>
             <Ionicons
                 name="search"
                 size={20}
-                color="#888"
+                color={isFocused ? '#00ff88' : '#888'}
                 style={styles.searchIcon}
             />
 
@@ -112,6 +115,12 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         paddingHorizontal: 15,
         height: 50,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    containerFocused: {
+        borderColor: '#00ff88',
+        backgroundColor: 'rgba(0, 255, 136, 0.1)',
     },
     searchIcon: {
         marginRight: 10,

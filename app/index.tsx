@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, Dimensions, Alert, Platform, DeviceEventEmitter, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Dimensions, Platform, DeviceEventEmitter, findNodeHandle } from 'react-native';
 import { Colors } from '../src/constants/Colors';
 import { SplashScreen } from '../src/components/SplashScreen';
 import { GameSlider } from '../src/components/GameSlider';
 import { ChannelList } from '../src/components/ChannelList';
-import { Sidebar } from '../src/components/Sidebar';
+import { ChannelCard, ChannelCardRef } from '../src/components/ChannelCard';
+import { Sidebar, SidebarRef } from '../src/components/Sidebar';
 import { TopBar } from '../src/components/TopBar';
 import { SettingsScreen } from '../src/components/SettingsScreen';
 import { SearchOverlay } from '../src/components/SearchOverlay';
@@ -29,6 +30,10 @@ export default function Home() {
     const [channels, setChannels] = useState<Channel[]>([]);
     const [focusedChannelId, setFocusedChannelId] = useState<string | null>(null);
     const contentRef = useRef<View>(null);
+    const firstChannelRef = useRef<ChannelCardRef>(null);
+    const sidebarRef = useRef<SidebarRef>(null);
+    const [firstChannelNodeHandle, setFirstChannelNodeHandle] = useState<number | null>(null);
+    const [sidebarNodeHandle, setSidebarNodeHandle] = useState<number | null>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -74,6 +79,72 @@ export default function Home() {
             console.error('Error loading channels:', error);
         }
     };
+
+    // Get node handle for the first channel card for nextFocusDown navigation
+    useEffect(() => {
+        // Retry mechanism to ensure channel card ref is available
+        let attempts = 0;
+        const maxAttempts = 10;
+
+        const tryGetHandle = () => {
+            if (firstChannelRef.current) {
+                const handle = firstChannelRef.current.getNodeHandle();
+                if (handle) {
+                    console.log('[Navigation] First channel node handle obtained:', handle);
+                    setFirstChannelNodeHandle(handle);
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        const retryTimer = setInterval(() => {
+            attempts++;
+            if (tryGetHandle() || attempts >= maxAttempts) {
+                clearInterval(retryTimer);
+                if (attempts >= maxAttempts) {
+                    console.warn('[Navigation] Failed to get first channel node handle after', maxAttempts, 'attempts');
+                }
+            }
+        }, 200);
+
+        return () => clearInterval(retryTimer);
+    }, [channels]);
+
+    // Get node handle for the sidebar for nextFocusLeft navigation
+    useEffect(() => {
+        // Retry mechanism to ensure sidebar refs are available
+        let attempts = 0;
+        const maxAttempts = 20; // Increased attempts
+
+        const tryGetHandle = () => {
+            console.log('[Navigation] Attempting to get sidebar handle, attempt:', attempts + 1);
+            if (sidebarRef.current) {
+                const handle = sidebarRef.current.getFirstItemNodeHandle();
+                console.log('[Navigation] Sidebar ref exists, handle:', handle);
+                if (handle) {
+                    console.log('[Navigation] Sidebar node handle obtained:', handle);
+                    setSidebarNodeHandle(handle);
+                    return true;
+                }
+            } else {
+                console.log('[Navigation] Sidebar ref is null');
+            }
+            return false;
+        };
+
+        const retryTimer = setInterval(() => {
+            attempts++;
+            if (tryGetHandle() || attempts >= maxAttempts) {
+                clearInterval(retryTimer);
+                if (attempts >= maxAttempts) {
+                    console.warn('[Navigation] Failed to get sidebar node handle after', maxAttempts, 'attempts');
+                }
+            }
+        }, 300); // Increased interval
+
+        return () => clearInterval(retryTimer);
+    }, []);
 
     const handleChannelPress = (channel: Channel) => {
         router.push({
@@ -154,8 +225,17 @@ export default function Home() {
             >
                 <TopBar onSearchPress={handleOpenSearch} />
 
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-                    <GameSlider onGamePress={handleGamePress} />
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                    style={styles.mainScrollView}
+                >
+                    <GameSlider
+                        onGamePress={handleGamePress}
+                        nextFocusDown={firstChannelNodeHandle || undefined}
+                        nextFocusLeft={sidebarNodeHandle || undefined}
+                        sidebarRef={sidebarRef}
+                    />
 
                     {/* All Channels Section */}
                     <View style={styles.sectionContainer}>
@@ -166,31 +246,20 @@ export default function Home() {
                             style={styles.horizontalList}
                             contentContainerStyle={styles.horizontalListContent}
                         >
-                            {channels.map((channel) => (
-                                <View key={channel.id} style={styles.channelCardWrapper}>
-                                    <Pressable
+                            {channels.map((channel, index) => (
+                                <View
+                                    key={channel.id}
+                                    style={styles.channelCardWrapper}
+                                >
+                                    <ChannelCard
+                                        ref={index === 0 ? firstChannelRef : undefined}
+                                        channel={channel}
                                         onPress={() => handleChannelPress(channel)}
                                         onFocus={() => setFocusedChannelId(channel.id)}
                                         onBlur={() => setFocusedChannelId(null)}
-                                        style={[
-                                            styles.channelCard,
-                                            focusedChannelId === channel.id && styles.channelCardFocused
-                                        ]}
-                                    >
-                                        <View style={styles.channelLogoContainer}>
-                                            <Image
-                                                source={{ uri: channel.logo }}
-                                                style={styles.channelLogo}
-                                                resizeMode="contain"
-                                            />
-                                        </View>
-                                        <View style={styles.channelInfoContainer}>
-                                            <Text style={styles.channelName} numberOfLines={1}>
-                                                {channel.name}
-                                            </Text>
-                                            <Text style={styles.channelLive}>AO VIVO</Text>
-                                        </View>
-                                    </Pressable>
+                                        nextFocusLeft={index === 0 ? (sidebarNodeHandle || undefined) : undefined}
+                                        size="small"
+                                    />
                                 </View>
                             ))}
                         </ScrollView>
@@ -208,6 +277,7 @@ export default function Home() {
                 {/* Main Layout: Sidebar + Content */}
                 <View style={styles.mainLayout}>
                     <Sidebar
+                        ref={sidebarRef}
                         activeRoute={currentScreen}
                         onNavigate={setCurrentScreen}
                         contentRef={contentRef}
@@ -246,75 +316,33 @@ const styles = StyleSheet.create({
     gradientBackground: {
         flex: 1,
     },
+    mainScrollView: {
+        // Keep default clip behavior
+    },
     scrollContent: {
         paddingBottom: 50,
     },
     sectionContainer: {
-        marginTop: 30,
-        paddingLeft: 40, // Align with TopBar padding
+        marginTop: 20,
+        paddingLeft: 40,
+        paddingRight: 20,
     },
     sectionTitle: {
         color: '#fff',
         fontSize: 18,
         fontWeight: '600',
-        marginBottom: 15,
+        marginBottom: 12,
     },
     horizontalList: {
         flexGrow: 0,
-        overflow: 'visible',
     },
     horizontalListContent: {
-        paddingVertical: 10,
+        paddingVertical: 5,
         paddingRight: 40,
+        gap: 12,
     },
     channelCardWrapper: {
-        marginRight: 15,
-        overflow: 'visible',
-    },
-    channelCard: {
-        width: 180,
-        height: 130,
-        borderRadius: 12,
-        backgroundColor: '#1a1a1a',
-    },
-    channelCardFocused: {
-        backgroundColor: '#333',
-        transform: [{ scale: 1.08 }],
-        borderWidth: 2,
-        borderColor: '#00ff88',
-        elevation: 8,
-        shadowColor: '#00ff88',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-    },
-    channelLogoContainer: {
-        width: '100%',
-        height: '65%',
-        backgroundColor: '#0d0d0d',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    channelLogo: {
-        width: '100%',
-        height: '100%',
-    },
-    channelInfoContainer: {
-        width: '100%',
-        height: '35%',
-        justifyContent: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-    },
-    channelName: {
-        color: '#fff',
-        fontSize: 14,
-        fontWeight: 'bold',
-        marginBottom: 4,
-    },
-    channelLive: {
-        color: '#e50914',
-        fontSize: 11,
+        // Wrapper for each card
     },
 });
 

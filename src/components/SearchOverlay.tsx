@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
-import { View, Text, StyleSheet, Modal, FlatList, Pressable, ActivityIndicator, Image, findNodeHandle, useWindowDimensions, StatusBar, Platform } from 'react-native';
+import { View, Text, StyleSheet, Modal, FlatList, Pressable, ActivityIndicator, Image, useWindowDimensions, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -8,6 +8,7 @@ import { fetchCurrentProgram, ProgramInfo } from '../services/guideService';
 import { useChannelSearch } from '../hooks/useChannelSearch';
 import { SearchInput } from './SearchInput';
 import { Colors } from '../constants/Colors';
+import { TVFocusable } from './TVFocusable';
 
 interface SearchOverlayProps {
     visible: boolean;
@@ -21,7 +22,7 @@ interface SearchOverlayProps {
 const SearchResultCard = memo(({
     channel,
     programInfo,
-    isFocused,
+    isFocused: externalFocused,
     onPress,
     onFocus,
     onBlur,
@@ -30,50 +31,52 @@ const SearchResultCard = memo(({
 }: {
     channel: Channel;
     programInfo?: ProgramInfo | null;
-    isFocused: boolean;
+    isFocused?: boolean;
     onPress: () => void;
-    onFocus: () => void;
-    onBlur: () => void;
+    onFocus?: () => void;
+    onBlur?: () => void;
     index: number;
     totalResults: number;
 }) => {
-    const cardRef = useRef<View>(null);
-
     return (
         <View style={styles.cardWrapper}>
-            <Pressable
-                ref={cardRef}
+            <TVFocusable
                 onPress={onPress}
                 onFocus={onFocus}
                 onBlur={onBlur}
-                style={[
-                    styles.resultCard,
-                    isFocused && styles.resultCardFocused
-                ]}
-                // TV navigation props
                 hasTVPreferredFocus={index === 0}
+                style={styles.resultCard}
+                focusedStyle={styles.resultCardFocused}
             >
-                <View style={styles.logoContainer}>
-                    <Image
-                        source={{ uri: channel.logo }}
-                        style={styles.channelLogo}
-                        resizeMode="contain"
-                    />
-                </View>
-                <View style={styles.channelInfo}>
-                    <Text style={styles.channelName} numberOfLines={1}>
-                        {channel.name}
-                    </Text>
-                    <Text style={styles.programText} numberOfLines={1}>
-                        {programInfo?.title || 'Carregando programação...'}
-                    </Text>
-                </View>
-                <Ionicons
-                    name="chevron-forward"
-                    size={24}
-                    color={isFocused ? '#00ff88' : '#555'}
-                />
-            </Pressable>
+                {({ isFocused: internalFocused }) => {
+                    const isFocused = externalFocused !== undefined ? externalFocused : internalFocused;
+
+                    return (
+                        <>
+                            <View style={styles.logoContainer}>
+                                <Image
+                                    source={{ uri: channel.logo }}
+                                    style={styles.channelLogo}
+                                    resizeMode="contain"
+                                />
+                            </View>
+                            <View style={styles.channelInfo}>
+                                <Text style={styles.channelName} numberOfLines={1}>
+                                    {channel.name}
+                                </Text>
+                                <Text style={styles.programText} numberOfLines={1}>
+                                    {programInfo?.title || 'Carregando programação...'}
+                                </Text>
+                            </View>
+                            <Ionicons
+                                name="chevron-forward"
+                                size={24}
+                                color={isFocused ? '#00ff88' : '#555'}
+                            />
+                        </>
+                    );
+                }}
+            </TVFocusable>
         </View>
     );
 });
@@ -280,12 +283,15 @@ export const SearchOverlay = memo(({ visible, onClose, onChannelSelect, initialS
                 >
                     {/* Header with Search Input or Game Title */}
                     <View style={[styles.header, dynamicStyles.header]}>
-                        <Pressable
+                        <TVFocusable
                             onPress={handleClose}
                             style={[styles.closeButton, dynamicStyles.closeButton]}
+                            focusedStyle={styles.closeButtonFocused}
                         >
-                            <Ionicons name="close" size={dynamicStyles.closeIcon} color="#fff" />
-                        </Pressable>
+                            {({ isFocused }) => (
+                                <Ionicons name="close" size={dynamicStyles.closeIcon} color={isFocused ? '#00ff88' : '#fff'} />
+                            )}
+                        </TVFocusable>
 
                         {isGameMode ? (
                             <View style={styles.gameModeHeader}>
@@ -398,6 +404,13 @@ const styles = StyleSheet.create({
     closeButton: {
         padding: 10,
         marginRight: 20,
+        borderRadius: 25,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    closeButtonFocused: {
+        borderColor: '#00ff88',
+        backgroundColor: 'rgba(0, 255, 136, 0.1)',
     },
     searchContainer: {
         flex: 1,

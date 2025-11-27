@@ -24,6 +24,52 @@ interface GuideCache {
 const guideCache: GuideCache = {};
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
+// Brazil timezone offset (UTC-3) in milliseconds
+const BRAZIL_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Parse date from "data_cabecalho" format like "Quarta-feira, 26/11" or "Quinta-feira, 27/11"
+ * Combined with time like "23:30" to create a full Date object.
+ * The API always returns times in Brazil timezone (UTC-3), so we explicitly create
+ * dates in Brazil time regardless of the device's local timezone.
+ */
+const parseDateFromApi = (dataCabecalho: string, hora: string): Date | undefined => {
+    if (!dataCabecalho || !hora) return undefined;
+
+    try {
+        // Extract day/month from "Dia-da-semana, DD/MM"
+        const match = dataCabecalho.match(/(\d{1,2})\/(\d{1,2})/);
+        if (!match) return undefined;
+
+        const day = parseInt(match[1], 10);
+        const month = parseInt(match[2], 10) - 1; // JS months are 0-indexed
+
+        // Parse time "HH:mm"
+        const [hours, minutes] = hora.split(':').map(Number);
+        if (isNaN(hours) || isNaN(minutes)) return undefined;
+
+        // Use current year
+        const now = new Date();
+        const year = now.getFullYear();
+
+        // Handle year rollover (Dec -> Jan)
+        let finalYear = year;
+        if (month === 0 && now.getMonth() === 11) {
+            finalYear = year + 1;
+        } else if (month === 11 && now.getMonth() === 0) {
+            finalYear = year - 1;
+        }
+
+        // Create date in UTC, then adjust for Brazil timezone (UTC-3)
+        // API times are in Brazil local time, so "00:00 Brazil" = "03:00 UTC"
+        const utcTimestamp = Date.UTC(finalYear, month, day, hours, minutes, 0, 0);
+        return new Date(utcTimestamp + BRAZIL_OFFSET_MS);
+    } catch (e) {
+        console.warn('Error parsing date from API:', e);
+        return undefined;
+    }
+};
+
 export const fetchCurrentProgram = async (meuGuiaTvUrl: string): Promise<ProgramInfo | null> => {
     if (!meuGuiaTvUrl) return null;
 
@@ -44,7 +90,7 @@ export const fetchCurrentProgram = async (meuGuiaTvUrl: string): Promise<Program
             const { data, timestamp } = JSON.parse(cachedItem);
             if (now - timestamp < CACHE_DURATION) {
                 console.log(`Using storage cached guide data for: ${meuGuiaTvUrl}`);
-                guideCache[meuGuiaTvUrl] = { data, timestamp }; // Update memory
+                guideCache[meuGuiaTvUrl] = { data, timestamp };
                 return data;
             }
         }
@@ -66,106 +112,39 @@ export const fetchCurrentProgram = async (meuGuiaTvUrl: string): Promise<Program
             data = JSON.parse(text);
         } catch (e) {
             console.error('Failed to parse EPG response as JSON:', e);
-            guideCache[meuGuiaTvUrl] = {
-                data: null,
-                timestamp: now
-            };
+            guideCache[meuGuiaTvUrl] = { data: null, timestamp: now };
             return null;
         }
 
         // Check if we have the expected JSON structure
         if (!data.programacao || !Array.isArray(data.programacao)) {
             console.warn('Invalid EPG JSON structure - missing programacao array');
-            guideCache[meuGuiaTvUrl] = {
-                data: null,
-                timestamp: now
-            };
+            guideCache[meuGuiaTvUrl] = { data: null, timestamp: now };
             return null;
         }
 
-        // Find the current program index
-        let currentIndex = -1;
+        // Find the current program - use ao_vivo flag from API
+        let currentIndex = data.programacao.findIndex((prog: any) => prog.ao_vivo === true);
 
-        // First, try to find a program with ao_vivo = true
-        currentIndex = data.programacao.findIndex((prog: any) => prog.ao_vivo === true);
-
-        // If no live program found, try to match by current time
-        if (currentIndex === -1 && data.programacao.length > 0) {
-            const currentTime = new Date();
-            // Use local date for comparison as API returns local times without date
-            const currentHour = currentTime.getHours();
-            const currentMinute = currentTime.getMinutes();
-            const currentTimeInMinutes = currentHour * 60 + currentMinute;
-
-            // Find the program that matches or is closest to current time
-            for (let i = 0; i < data.programacao.length; i++) {
-                const prog = data.programacao[i];
-                if (prog.hora) {
-                    const [hour, minute] = prog.hora.split(':').map(Number);
-                    const progTimeInMinutes = hour * 60 + minute;
-
-                    // Check if this program is currently airing
-                    if (progTimeInMinutes <= currentTimeInMinutes) {
-                        const nextProg = data.programacao[i + 1];
-                        if (!nextProg) {
-                            // This is the last program, assume it's current
-                            currentIndex = i;
-                            break;
-                        } else if (nextProg.hora) {
-                            const [nextHour, nextMinute] = nextProg.hora.split(':').map(Number);
-                            let nextProgTimeInMinutes = nextHour * 60 + nextMinute;
-
-                            // Handle midnight crossover if needed (though simplistic here)
-                            if (nextProgTimeInMinutes < progTimeInMinutes) {
-                                nextProgTimeInMinutes += 24 * 60;
-                            }
-
-                            if (nextProgTimeInMinutes > currentTimeInMinutes) {
-                                currentIndex = i;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // If still no program found, use the first one as fallback
+        // If no live program found, fallback to first program
         if (currentIndex === -1 && data.programacao.length > 0) {
             currentIndex = 0;
         }
 
         if (currentIndex === -1) {
             console.warn('No current program found in EPG data');
-            guideCache[meuGuiaTvUrl] = {
-                data: null,
-                timestamp: now
-            };
+            guideCache[meuGuiaTvUrl] = { data: null, timestamp: now };
             return null;
         }
 
         const currentProgram = data.programacao[currentIndex];
         const nextProgram = data.programacao[currentIndex + 1];
 
-        // Parse start and end times
-        const nowTime = new Date();
-
-        // Helper to create Date object from "HH:mm"
-        const createDateFromTime = (timeStr: string) => {
-            if (!timeStr) return undefined;
-            const [hours, minutes] = timeStr.split(':').map(Number);
-            const date = new Date(nowTime);
-            date.setHours(hours, minutes, 0, 0);
-            return date;
-        };
-
-        const startTime = createDateFromTime(currentProgram.hora);
-        let endTime = nextProgram ? createDateFromTime(nextProgram.hora) : undefined;
-
-        // Handle day rollover for endTime if it's earlier than startTime
-        if (startTime && endTime && endTime < startTime) {
-            endTime.setDate(endTime.getDate() + 1);
-        }
+        // Parse dates using data_cabecalho from API
+        const startTime = parseDateFromApi(currentProgram.data_cabecalho, currentProgram.hora);
+        let endTime = nextProgram
+            ? parseDateFromApi(nextProgram.data_cabecalho, nextProgram.hora)
+            : undefined;
 
         // Fallback for endTime: default to 1 hour duration if not known
         if (startTime && !endTime) {
@@ -186,10 +165,7 @@ export const fetchCurrentProgram = async (meuGuiaTvUrl: string): Promise<Program
         };
 
         // Cache the result
-        const cacheEntry = {
-            data: programInfo,
-            timestamp: now
-        };
+        const cacheEntry = { data: programInfo, timestamp: now };
         guideCache[meuGuiaTvUrl] = cacheEntry;
 
         // Persist cache
@@ -204,13 +180,7 @@ export const fetchCurrentProgram = async (meuGuiaTvUrl: string): Promise<Program
 
     } catch (error) {
         console.error("Error fetching program guide:", error);
-
-        // Cache null result to avoid repeated failed requests
-        guideCache[meuGuiaTvUrl] = {
-            data: null,
-            timestamp: now
-        };
-
+        guideCache[meuGuiaTvUrl] = { data: null, timestamp: now };
         return null;
     }
 };
