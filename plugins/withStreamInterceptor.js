@@ -181,6 +181,7 @@ class StreamInterceptorWebView @JvmOverloads constructor(
 
     companion object {
         private const val TAG = "StreamInterceptor"
+        private const val DEFAULT_USER_AGENT = "${USER_AGENT}"
 
         // Video/Stream URL patterns (sincronizado com streamInterceptor.ts)
         private val VIDEO_REGEX = Regex(
@@ -196,6 +197,10 @@ ${generateKotlinAdDomains()}
 
     private var streamDetectedCallback: ((String, Map<String, String>) -> Unit)? = null
     private val detectedUrls = mutableSetOf<String>()
+
+    // Cached user agent for thread-safe access from shouldInterceptRequest
+    @Volatile
+    private var cachedUserAgent: String = DEFAULT_USER_AGENT
 
     init {
         setupWebView()
@@ -217,7 +222,7 @@ ${generateKotlinAdDomains()}
             useWideViewPort = true
             setSupportMultipleWindows(false)
             javaScriptCanOpenWindowsAutomatically = false
-            userAgentString = "${USER_AGENT}"
+            userAgentString = DEFAULT_USER_AGENT
 
             // Enable mixed content for streams
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
@@ -226,8 +231,17 @@ ${generateKotlinAdDomains()}
             cacheMode = WebSettings.LOAD_DEFAULT
         }
 
+        // Cache the user agent for thread-safe access
+        cachedUserAgent = settings.userAgentString
+
         webViewClient = StreamInterceptorWebViewClient()
         webChromeClient = StreamInterceptorChromeClient()
+    }
+
+    // Update cached user agent when changed externally
+    fun updateUserAgent(userAgent: String) {
+        settings.userAgentString = userAgent
+        cachedUserAgent = userAgent
     }
 
     private fun isAdDomain(url: String): Boolean {
@@ -284,11 +298,13 @@ ${generateKotlinAdDomains()}
                 request.requestHeaders?.forEach { (key, value) ->
                     headers[key] = value
                 }
-                headers["User-Agent"] = settings.userAgentString
+                // Use cached user agent (thread-safe)
+                headers["User-Agent"] = cachedUserAgent
 
-                // Get referer from request or use current URL
+                // Get referer from request headers (already available)
                 if (!headers.containsKey("Referer")) {
-                    headers["Referer"] = view.url ?: ""
+                    // Note: view.url is not safe to access here, use empty string as fallback
+                    headers["Referer"] = request.requestHeaders?.get("Referer") ?: ""
                 }
 
                 notifyStreamDetected(url, headers)
@@ -315,7 +331,7 @@ ${generateKotlinAdDomains()}
             // Check for video URL in navigation
             if (isVideoUrl(url)) {
                 val headers = mapOf(
-                    "User-Agent" to settings.userAgentString,
+                    "User-Agent" to cachedUserAgent,
                     "Referer" to (view.url ?: "")
                 )
                 notifyStreamDetected(url, headers)
@@ -446,7 +462,7 @@ class StreamInterceptorViewManager(
 
     @ReactProp(name = "userAgent")
     fun setUserAgent(view: StreamInterceptorWebView, userAgent: String?) {
-        userAgent?.let { view.settings.userAgentString = it }
+        userAgent?.let { view.updateUserAgent(it) }
     }
 
     override fun getExportedCustomDirectEventTypeConstants(): MutableMap<String, Any> {
@@ -456,6 +472,7 @@ class StreamInterceptorViewManager(
             .put("onLoadEnd", MapBuilder.of("registrationName", "onLoadEnd"))
             .put("onError", MapBuilder.of("registrationName", "onError"))
             .build()
+            .toMutableMap()
     }
 
     override fun getCommandsMap(): MutableMap<String, Int> {
@@ -467,6 +484,7 @@ class StreamInterceptorViewManager(
             .put("injectJavaScript", COMMAND_INJECT_JS)
             .put("clearDetectedUrls", COMMAND_CLEAR_DETECTED)
             .build()
+            .toMutableMap()
     }
 
     override fun receiveCommand(view: StreamInterceptorWebView, commandId: Int, args: ReadableArray?) {
@@ -507,8 +525,70 @@ class StreamInterceptorPackage : ReactPackage {
 // =============================================================================
 
 const withStreamInterceptor = (config) => {
-    // This plugin will be used with expo prebuild to generate native code
-    // For now, we'll document what needs to be done manually
+    // Modify MainApplication.kt to add StreamInterceptorPackage
+    config = withMainApplication(config, (modConfig) => {
+        const contents = modConfig.modResults.contents;
+
+        // Write Kotlin files
+        const projectRoot = modConfig.modRequest.projectRoot;
+        const kotlinDir = path.join(projectRoot, 'android/app/src/main/java/com/hellfiveosborn/H5TV');
+
+        // Ensure directory exists
+        if (!fs.existsSync(kotlinDir)) {
+            fs.mkdirSync(kotlinDir, { recursive: true });
+        }
+
+        // Write StreamInterceptorPackage.kt
+        const packageFile = path.join(kotlinDir, 'StreamInterceptorPackage.kt');
+        if (!fs.existsSync(packageFile)) {
+            fs.writeFileSync(packageFile, STREAM_INTERCEPTOR_PACKAGE_KOTLIN);
+        }
+
+        // Write StreamInterceptorViewManager.kt
+        const viewManagerFile = path.join(kotlinDir, 'StreamInterceptorViewManager.kt');
+        if (!fs.existsSync(viewManagerFile)) {
+            fs.writeFileSync(viewManagerFile, STREAM_INTERCEPTOR_VIEW_MANAGER_KOTLIN);
+        }
+
+        // Write StreamInterceptorWebView.kt
+        const webViewFile = path.join(kotlinDir, 'StreamInterceptorWebView.kt');
+        if (!fs.existsSync(webViewFile)) {
+            fs.writeFileSync(webViewFile, STREAM_INTERCEPTOR_WEBVIEW_KOTLIN);
+        }
+
+        // Write StreamInterceptorModule.kt
+        const moduleFile = path.join(kotlinDir, 'StreamInterceptorModule.kt');
+        if (!fs.existsSync(moduleFile)) {
+            fs.writeFileSync(moduleFile, STREAM_INTERCEPTOR_MODULE_KOTLIN);
+        }
+
+        // Check if already added
+        if (contents.includes('StreamInterceptorPackage')) {
+            return modConfig;
+        }
+
+        // Add the package to getPackages()
+        const result = mergeContents({
+            tag: 'stream-interceptor-package',
+            src: contents,
+            newSrc: '              add(StreamInterceptorPackage())',
+            anchor: /add\(MyReactNativePackage\(\)\)/,
+            offset: 0,
+            comment: '//',
+        });
+
+        if (result.didMerge) {
+            modConfig.modResults.contents = result.contents;
+        } else {
+            // Fallback: try to add after the comment line
+            modConfig.modResults.contents = contents.replace(
+                /\/\/ add\(MyReactNativePackage\(\)\)/,
+                '// add(MyReactNativePackage())\n              add(StreamInterceptorPackage())'
+            );
+        }
+
+        return modConfig;
+    });
 
     return config;
 };

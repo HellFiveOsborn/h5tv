@@ -38,7 +38,8 @@
     "plugins": [
       "expo-router",
       "./plugins/withBootReceiver.js",
-      "./plugins/withAbiSplits.js"
+      "./plugins/withAbiSplits.js",
+      "./plugins/withStreamInterceptor.js"
     ]
   }
 }
