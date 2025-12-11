@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, View, Text, Pressable, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
-import Markdown from 'react-native-markdown-display';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { SimpleMarkdown } from './SimpleMarkdown';
 import { UpdateInfo, downloadUpdate, installUpdate } from '../services/updateService';
 import { Colors } from '../constants/Colors';
 
@@ -65,45 +65,9 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({ visible, updateInfo,
             color: Colors.text,
             marginBottom: 5,
         },
-        listUnorderedItemIcon: {
-            color: Colors.primary,
-            fontSize: 8,
-            marginRight: 10,
-        },
-        bullet_list: {
-            marginLeft: 10,
-        },
-        ordered_list: {
-            marginLeft: 10,
-        },
-        code_inline: {
-            backgroundColor: Colors.surface,
-            color: Colors.primary,
-            paddingHorizontal: 6,
-            paddingVertical: 2,
-            borderRadius: 4,
-            fontFamily: 'monospace',
-        },
-        fence: {
-            backgroundColor: Colors.surface,
-            padding: 10,
-            borderRadius: 8,
-            marginVertical: 10,
-        },
-        code_block: {
-            color: Colors.text,
-            fontFamily: 'monospace',
-        },
-        link: {
-            color: Colors.primary,
-        },
         strong: {
             color: Colors.text,
             fontWeight: 'bold' as const,
-        },
-        em: {
-            color: Colors.textSecondary,
-            fontStyle: 'italic' as const,
         },
         hr: {
             backgroundColor: Colors.border,
@@ -132,9 +96,9 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({ visible, updateInfo,
                     </View>
 
                     <ScrollView style={styles.notesContainer} showsVerticalScrollIndicator={true}>
-                        <Markdown style={markdownStyles}>
+                        <SimpleMarkdown style={markdownStyles}>
                             {updateInfo.releaseNotes || 'Sem notas de lançamento disponíveis.'}
-                        </Markdown>
+                        </SimpleMarkdown>
                     </ScrollView>
 
                     {downloading ? (

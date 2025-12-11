@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Image, Pressable, StyleSheet, Animated, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Channel } from '../../services/channelService';
 import { ProgramInfo } from '../../services/guideService';
+import { getAdjustedTimestamp } from '../../services/timeService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -44,7 +45,7 @@ export const PlayerOverlay = ({
 
     const getProgress = () => {
         if (!programInfo?.startTime || !programInfo?.endTime) return 0;
-        const now = new Date().getTime();
+        const now = getAdjustedTimestamp();
         const start = new Date(programInfo.startTime).getTime();
         const end = new Date(programInfo.endTime).getTime();
 
@@ -61,7 +62,7 @@ export const PlayerOverlay = ({
     // Calculate remaining time
     const getRemainingTime = () => {
         if (!programInfo?.endTime) return null;
-        const now = new Date().getTime();
+        const now = getAdjustedTimestamp();
         const end = new Date(programInfo.endTime).getTime();
         const remaining = Math.max(0, end - now);
         const minutes = Math.floor(remaining / 60000);
@@ -84,7 +85,7 @@ export const PlayerOverlay = ({
                     {/* Left Section: Logo */}
                     <Pressable
                         focusable={true}
-                        hasTVPreferredFocus={true}
+                        hasTVPreferredFocus={totalUrls <= 1}
                         onFocus={() => setIsLogoFocused(true)}
                         onBlur={() => setIsLogoFocused(false)}
                         style={[
@@ -165,6 +166,7 @@ export const PlayerOverlay = ({
                                     isSourceFocused && styles.sourceButtonFocused
                                 ]}
                                 focusable={true}
+                                hasTVPreferredFocus={true}
                             >
                                 <Ionicons
                                     name="swap-horizontal"

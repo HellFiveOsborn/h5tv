@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Switch, Alert, ActivityIndicator, ScrollView, P
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Colors } from '../constants/Colors';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { StorageKeys } from '../constants/StorageKeys';
 import { checkForUpdate, UpdateInfo } from '../services/updateService';
 import { UpdateDialog } from './UpdateDialog';

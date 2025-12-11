@@ -1,5 +1,6 @@
 import React, { useState, useEffect, memo } from 'react';
 import { View, StyleSheet } from 'react-native';
+import { getAdjustedTime } from '../services/timeService';
 
 interface ProgramProgressBarProps {
     startTime?: Date | string;
@@ -49,7 +50,7 @@ export const ProgramProgressBar = memo(({
             }
 
             setHasValidTimes(true);
-            const now = new Date();
+            const now = getAdjustedTime();
             const startMs = start.getTime();
             const endMs = end.getTime();
             const currentMs = now.getTime();

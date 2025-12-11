@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Image, ViewStyle, StyleProp, Dimensions } from 
 import { Channel } from '../services/channelService';
 import { ProgramInfo } from '../services/guideService';
 import { TVFocusable, TVFocusableRef } from './TVFocusable';
+import { Colors } from '../constants/Colors';
 
 export interface ChannelCardRef {
     getNodeHandle: () => number | null;
@@ -32,27 +33,27 @@ interface ChannelCardProps {
 // Size configurations
 const SIZE_CONFIG = {
     small: {
-        width: 150,
-        height: 110,
-        logoHeight: '62%',
+        width: 160,
+        height: 120,
+        logoHeight: '60%',
         nameSize: 13,
         infoSize: 10,
         borderRadius: 8,
     },
     medium: {
-        width: 200,
-        height: 140,
-        logoHeight: '65%',
-        nameSize: 14,
-        infoSize: 11,
+        width: 220,
+        height: 160,
+        logoHeight: '62%',
+        nameSize: 15,
+        infoSize: 12,
         borderRadius: 10,
     },
     large: {
-        width: 260,
-        height: 180,
-        logoHeight: '68%',
-        nameSize: 16,
-        infoSize: 12,
+        width: 280,
+        height: 200,
+        logoHeight: '65%',
+        nameSize: 17,
+        infoSize: 13,
         borderRadius: 12,
     },
 };
@@ -131,7 +132,7 @@ export const ChannelCard = memo(forwardRef<ChannelCardRef, ChannelCardProps>(({
                                 </Text>
                             ) : (
                                 <Text
-                                    style={[styles.programInfo, { fontSize: config.infoSize }]}
+                                    style={[{ fontSize: config.infoSize, color: Colors.primary }]}
                                     numberOfLines={1}
                                 >
                                     AO VIVO
@@ -157,15 +158,15 @@ ChannelCard.displayName = 'ChannelCard';
 
 const styles = StyleSheet.create({
     channelCard: {
-        backgroundColor: '#1a1a1a',
+        backgroundColor: Colors.surfaceLight,
         borderWidth: 2,
         borderColor: 'transparent',
         overflow: 'hidden',
     },
     channelCardFocused: {
-        backgroundColor: '#2a2a2a',
-        borderColor: '#00ff88',
-        shadowColor: '#00ff88',
+        backgroundColor: Colors.surfaceLighter,
+        borderColor: Colors.primaryDark,
+        shadowColor: Colors.primaryDark,
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.3,
         shadowRadius: 6,
@@ -178,7 +179,7 @@ const styles = StyleSheet.create({
     },
     logoContainer: {
         width: '100%',
-        backgroundColor: '#0d0d0d',
+        backgroundColor: Colors.surfaceDark,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -193,11 +194,11 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
     },
     channelName: {
-        color: '#fff',
+        color: Colors.text,
         fontWeight: 'bold',
         marginBottom: 2,
     },
     programInfo: {
-        color: '#e50914',
+        color: Colors.textSecondary,
     },
 });

@@ -5,6 +5,7 @@ import { fetchGames } from '../services/api';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusArea } from '../constants/FocusContext';
 import { TVFocusable } from './TVFocusable';
+import { useIsFocused } from '@react-navigation/native';
 
 // Import local assets
 const banner1 = require('../../assets/banner1.webp');
@@ -165,6 +166,9 @@ interface GameSliderProps {
 }
 
 export const GameSlider = ({ onGamePress, nextFocusDown, nextFocusLeft, sidebarRef }: GameSliderProps) => {
+    // Check if screen is focused (pauses activity when navigating away)
+    const isScreenFocused = useIsFocused();
+
     // Log nextFocusLeft changes
     useEffect(() => {
         console.log('[GameSlider] nextFocusLeft prop changed:', nextFocusLeft);
@@ -211,10 +215,12 @@ export const GameSlider = ({ onGamePress, nextFocusDown, nextFocusLeft, sidebarR
         };
     }, []);
 
-    // Auto-play effect - starts/stops based on global focus area
+    // Auto-play effect - starts/stops based on global focus area AND screen visibility
     useEffect(() => {
-        console.log('[GameSlider] AutoPlay effect - isAutoPlayAllowed:', isAutoPlayAllowed, 'games:', games.length, 'currentFocusArea:', currentFocusArea);
-        if (games.length > 0 && isAutoPlayAllowed) {
+        console.log('[GameSlider] AutoPlay effect - isAutoPlayAllowed:', isAutoPlayAllowed, 'games:', games.length, 'currentFocusArea:', currentFocusArea, 'isScreenFocused:', isScreenFocused);
+
+        // Only run autoplay if screen is focused
+        if (games.length > 0 && isAutoPlayAllowed && isScreenFocused) {
             // Start auto-play when focus is on sidebar, search, or none
             if (!autoPlayRef.current) {
                 console.log('[GameSlider] Starting autoplay');
@@ -223,9 +229,9 @@ export const GameSlider = ({ onGamePress, nextFocusDown, nextFocusLeft, sidebarR
                 }, AUTO_PLAY_DELAY);
             }
         } else {
-            // Stop auto-play when focus is on slider or other content
+            // Stop auto-play when focus is on slider or other content OR screen is not focused
             if (autoPlayRef.current) {
-                console.log('[GameSlider] Stopping autoplay');
+                console.log('[GameSlider] Stopping autoplay (screen focused:', isScreenFocused, ')');
                 clearInterval(autoPlayRef.current);
                 autoPlayRef.current = null;
             }
@@ -237,7 +243,7 @@ export const GameSlider = ({ onGamePress, nextFocusDown, nextFocusLeft, sidebarR
                 autoPlayRef.current = null;
             }
         };
-    }, [games.length, isAutoPlayAllowed, currentFocusArea]);
+    }, [games.length, isAutoPlayAllowed, currentFocusArea, isScreenFocused]);
 
     // Scroll to focused index when it changes
     useEffect(() => {
@@ -312,7 +318,7 @@ export const GameSlider = ({ onGamePress, nextFocusDown, nextFocusLeft, sidebarR
     const renderItem = useCallback(({ item, index }: { item: GameData; index: number }) => {
         // Only pass nextFocusLeft to the first item
         const shouldNavigateToSidebar = index === 0;
-        if (shouldNavigateToSidebar && nextFocusLeft) {
+        if (shouldNavigateToSidebar && nextFocusLeft && isScreenFocused) {
             console.log('[GameSlider] First card rendering with nextFocusLeft:', nextFocusLeft);
         }
 

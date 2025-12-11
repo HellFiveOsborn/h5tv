@@ -12,9 +12,12 @@
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
-    "ios": {
-      "supportsTablet": true
-    },
+    "assetBundlePatterns": [
+      "assets/banner*.webp",
+      "assets/adaptive-icon.png",
+      "assets/icon.png",
+      "assets/logo.png"
+    ],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -27,19 +30,17 @@
     "androidStatusBar": {
       "hidden": true,
       "translucent": true,
-      "backgroundColor": "#00000000"
+      "backgroundColor": "#000000"
     },
     "androidNavigationBar": {
       "backgroundColor": "#000000"
-    },
-    "web": {
-      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
       "./plugins/withBootReceiver.js",
       "./plugins/withAbiSplits.js",
-      "./plugins/withStreamInterceptor.js"
+      "./plugins/withStreamInterceptor.js",
+      "./plugins/withBundleInDebug.js"
     ]
   }
 }

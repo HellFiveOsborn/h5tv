@@ -1,9 +1,10 @@
 import React, { useState, useEffect, memo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { syncTimeWithServer } from '../services/timeService';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { syncTimeWithServer, getAdjustedTime, getTimeOffset } from '../services/timeService';
 import { SearchInput } from './SearchInput';
 import { TVFocusable } from './TVFocusable';
+import { Colors } from '../constants/Colors';
 
 
 interface TopBarProps {
@@ -14,6 +15,8 @@ interface TopBarProps {
     onClearSearch?: () => void;
     showSearch?: boolean;
     onSearchPress?: () => void;
+    onBrowserPress?: () => void;
+    showBrowserIcon?: boolean;
 }
 
 export const TopBar = memo(({
@@ -23,41 +26,29 @@ export const TopBar = memo(({
     isSearching = false,
     onClearSearch,
     showSearch = true,
-    onSearchPress
+    onSearchPress,
+    onBrowserPress,
+    showBrowserIcon = true
 }: TopBarProps) => {
-    const [currentTime, setCurrentTime] = useState(new Date());
-    const [timeOffset, setTimeOffset] = useState(0);
+    const [currentTime, setCurrentTime] = useState(getAdjustedTime());
 
     useEffect(() => {
-        // Call sync time only once on component mount
-        syncTime();
+        // Sync time on mount (may already be synced from _layout.tsx)
+        const initTime = async () => {
+            await syncTimeWithServer();
+            setCurrentTime(getAdjustedTime());
+        };
+        initTime();
 
-        // Local ticker for smooth seconds updates
+        // Local ticker for smooth seconds updates using centralized adjusted time
         const timer = setInterval(() => {
-            setCurrentTime(new Date(Date.now() + timeOffset));
+            setCurrentTime(getAdjustedTime());
         }, 1000);
 
         return () => {
             clearInterval(timer);
         };
-    }, []); // Empty dependency array means this runs only once on mount
-
-    useEffect(() => {
-        // Update interval when timeOffset changes
-        const timer = setInterval(() => {
-            setCurrentTime(new Date(Date.now() + timeOffset));
-        }, 1000);
-
-        return () => {
-            clearInterval(timer);
-        };
-    }, [timeOffset]);
-
-    const syncTime = async () => {
-        const offset = await syncTimeWithServer();
-        setTimeOffset(offset);
-        setCurrentTime(new Date(Date.now() + offset));
-    };
+    }, []);
 
     const formatTime = (date: Date) => {
         return date.toLocaleTimeString('pt-BR', {
@@ -88,7 +79,7 @@ export const TopBar = memo(({
                         focusedStyle={styles.backButtonFocused}
                     >
                         {({ isFocused }) => (
-                            <Ionicons name="arrow-back" size={28} color={isFocused ? '#00ff88' : '#fff'} />
+                            <Ionicons name="arrow-back" size={28} color={isFocused ? Colors.primaryDark : Colors.text} />
                         )}
                     </TVFocusable>
                 )}
@@ -101,9 +92,9 @@ export const TopBar = memo(({
                         >
                             {({ isFocused }) => (
                                 <>
-                                    <Ionicons name="search" size={20} color={isFocused ? '#00ff88' : '#888'} style={styles.searchIcon} />
+                                    <Ionicons name="search" size={20} color={isFocused ? Colors.primaryDark : Colors.textMuted} style={styles.searchIcon} />
                                     <Text style={[styles.searchPlaceholder, isFocused && styles.searchPlaceholderFocused]}>Buscar canal ou partida...</Text>
-                                    <Ionicons name="mic" size={20} color="#00ff88" />
+                                    <Ionicons name="mic" size={20} color={Colors.primaryDark} />
                                 </>
                             )}
                         </TVFocusable>
@@ -116,6 +107,21 @@ export const TopBar = memo(({
                             placeholder="Buscar canal ou partida..."
                         />
                     )
+                )}
+                {showBrowserIcon && onBrowserPress && (
+                    <TVFocusable
+                        onPress={onBrowserPress}
+                        style={styles.browserButton}
+                        focusedStyle={styles.browserButtonFocused}
+                    >
+                        {({ isFocused }) => (
+                            <Ionicons
+                                name="globe-outline"
+                                size={24}
+                                color={isFocused ? Colors.primaryDark : Colors.text}
+                            />
+                        )}
+                    </TVFocusable>
                 )}
             </View>
 
@@ -152,14 +158,14 @@ const styles = StyleSheet.create({
         borderColor: 'transparent',
     },
     backButtonFocused: {
-        borderColor: '#00ff88',
-        backgroundColor: 'rgba(0, 255, 136, 0.1)',
+        borderColor: Colors.primaryDark,
+        backgroundColor: Colors.successLight,
     },
     searchTrigger: {
         flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        backgroundColor: Colors.focusBackground,
         borderRadius: 30,
         paddingHorizontal: 15,
         height: 50,
@@ -167,19 +173,31 @@ const styles = StyleSheet.create({
         borderColor: 'transparent',
     },
     searchTriggerFocused: {
-        borderColor: '#00ff88',
-        backgroundColor: 'rgba(0, 255, 136, 0.1)',
+        borderColor: Colors.primaryDark,
+        backgroundColor: Colors.successLight,
     },
     searchIcon: {
         marginRight: 10,
     },
     searchPlaceholder: {
         flex: 1,
-        color: '#666',
+        color: Colors.textDark,
         fontSize: 16,
     },
     searchPlaceholderFocused: {
-        color: '#888',
+        color: Colors.textMuted,
+    },
+    browserButton: {
+        marginLeft: 12,
+        padding: 10,
+        borderRadius: 25,
+        borderWidth: 2,
+        borderColor: 'transparent',
+        backgroundColor: Colors.focusBackground,
+    },
+    browserButtonFocused: {
+        borderColor: Colors.primaryDark,
+        backgroundColor: Colors.successLight,
     },
     clockContainer: {
         alignItems: 'flex-end',
