@@ -5,10 +5,9 @@ import { Colors } from '../src/constants/Colors';
 import { useEffect, useState } from 'react';
 import { checkForUpdate, UpdateInfo } from '../src/services/updateService';
 import { UpdateDialog } from '../src/components/UpdateDialog';
-import { SettingsModal } from '../src/components/SettingsModal';
 import { SettingsService } from '../src/services/settingsService';
-import { TouchableOpacity, Text, View, Platform, StatusBar as RNStatusBar } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { syncTimeWithServer } from '../src/services/timeService';
+import { Platform, StatusBar as RNStatusBar } from 'react-native';
 import * as Network from 'expo-network';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as NavigationBar from 'expo-navigation-bar';
@@ -17,7 +16,6 @@ export default function RootLayout() {
     useKeepAwake();
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
     const [dialogVisible, setDialogVisible] = useState(false);
-    const [settingsVisible, setSettingsVisible] = useState(false);
 
     useEffect(() => {
         const init = async () => {
@@ -28,6 +26,10 @@ export default function RootLayout() {
                 // Hide navigation bar on Android
                 NavigationBar.setVisibilityAsync('hidden');
             }
+
+            // Sync time with server on app startup
+            // This compares device time with API time and adjusts if difference > 30 seconds
+            await syncTimeWithServer();
 
             // Check for updates
             const info = await checkForUpdate();
@@ -62,6 +64,12 @@ export default function RootLayout() {
                 }}
             >
                 <Stack.Screen name="index" />
+                <Stack.Screen
+                    name="browser"
+                    options={{
+                        animation: 'slide_from_right'
+                    }}
+                />
             </Stack>
 
             <UpdateDialog

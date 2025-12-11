@@ -35,9 +35,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --arch)
             ARCH="$2"
-            if [[ ! "$ARCH" =~ ^(all|arm64|arm|universal)$ ]]; then
+            if [[ ! "$ARCH" =~ ^(all|arm64|arm|x86|x86_64|universal)$ ]]; then
                 echo "Arquitetura invalida: $ARCH"
-                echo "Valores validos: all, arm64, arm, universal"
+                echo "Valores validos: all, arm64, arm, x86, x86_64, universal"
                 exit 1
             fi
             shift 2
@@ -49,7 +49,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --clean           Limpa builds anteriores"
             echo "  --skip-prebuild   Pula o expo prebuild"
             echo "  --output <dir>    Diretorio de saida (padrao: ./releases)"
-            echo "  --arch <arch>     Arquitetura: all, arm64, arm, universal (padrao: all)"
+            echo "  --arch <arch>     Arquitetura: all, arm64, arm, x86, x86_64, universal (padrao: all)"
             echo "  -h, --help        Mostra esta ajuda"
             exit 0
             ;;
@@ -60,6 +60,53 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Função para configurar JAVA_HOME
+set_java_home() {
+    local required_version=17
+    local current_version=0
+    
+    # Verificar versão atual do Java
+    if command -v java &> /dev/null; then
+        current_version=$(java -version 2>&1 | head -n1 | cut -d'"' -f2 | cut -d'.' -f1)
+        # Para Java 8, o formato é "1.8.x"
+        if [ "$current_version" = "1" ]; then
+            current_version=$(java -version 2>&1 | head -n1 | cut -d'"' -f2 | cut -d'.' -f2)
+        fi
+    fi
+    
+    if [ "$current_version" -ge "$required_version" ] 2>/dev/null; then
+        log_info "Java $current_version detectado - OK"
+        return 0
+    fi
+    
+    log_warning "Java atual ($current_version) e inferior a $required_version"
+    
+    # Procurar por instalações de Java 17+ (Linux/Mac)
+    local java_paths=(
+        "/usr/lib/jvm/java-17-openjdk"
+        "/usr/lib/jvm/java-21-openjdk"
+        "/usr/lib/jvm/temurin-17-jdk"
+        "/usr/lib/jvm/temurin-21-jdk"
+        "/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home"
+        "/Library/Java/JavaVirtualMachines/temurin-21.jdk/Contents/Home"
+        "/Library/Java/JavaVirtualMachines/jdk-17.jdk/Contents/Home"
+        "/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home"
+    )
+    
+    for java_path in "${java_paths[@]}"; do
+        if [ -x "$java_path/bin/java" ]; then
+            log_info "Encontrado Java em: $java_path"
+            export JAVA_HOME="$java_path"
+            export PATH="$JAVA_HOME/bin:$PATH"
+            log_success "JAVA_HOME configurado para: $java_path"
+            return 0
+        fi
+    done
+    
+    log_error "Java 17 ou superior nao encontrado. Instale o JDK 17 de: https://adoptium.net/"
+    return 1
+}
 
 log_info() {
     echo -e "${CYAN}[INFO]${NC} $1"
@@ -86,6 +133,11 @@ echo ""
 
 if [ "$ARCH" != "all" ]; then
     log_info "Arquitetura selecionada: $ARCH"
+fi
+
+# Configurar Java 17+
+if ! set_java_home; then
+    exit 1
 fi
 
 # Verificar se estamos no diretório correto
@@ -160,6 +212,8 @@ log_info "Processando APKs gerados..."
 declare -A APK_MAPPINGS
 APK_MAPPINGS["app-arm64-v8a-release.apk"]="H5TV-v${VERSION}-arm64-v8a.apk|arm64"
 APK_MAPPINGS["app-armeabi-v7a-release.apk"]="H5TV-v${VERSION}-armeabi-v7a.apk|arm"
+APK_MAPPINGS["app-x86-release.apk"]="H5TV-v${VERSION}-x86.apk|x86"
+APK_MAPPINGS["app-x86_64-release.apk"]="H5TV-v${VERSION}-x86_64.apk|x86_64"
 APK_MAPPINGS["app-universal-release.apk"]="H5TV-v${VERSION}-universal.apk|universal"
 APK_MAPPINGS["app-release.apk"]="H5TV-v${VERSION}-universal.apk|universal"  # Fallback se não houver splits
 

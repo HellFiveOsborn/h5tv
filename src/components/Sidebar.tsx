@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import { View, Text, StyleSheet, BackHandler, findNodeHandle, useWindowDimensions } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Colors } from '../constants/Colors';
 import { useFocusArea } from '../constants/FocusContext';
 import { TVFocusable, TVFocusableRef, useTVFocusableGroup } from './TVFocusable';
@@ -27,7 +27,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeRoute, onNa
         { icon: 'home', label: 'Início', route: 'home' },
         { icon: 'grid', label: 'Lista de Canais', route: 'channels' },
         { icon: 'settings-outline', label: 'Configurações', route: 'settings' },
-        { icon: 'power', label: 'Sair', route: 'logout', color: '#e50914' },
+        { icon: 'power', label: 'Sair', route: 'logout', color: Colors.error },
     ];
 
     // Usar hook para gerenciar grupo de focusables
@@ -114,7 +114,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeRoute, onNa
                                     <Ionicons
                                         name={item.icon as any}
                                         size={dynamicStyles.icon.size}
-                                        color={item.color || (isItemActive ? Colors.primary : (isFocused ? '#fff' : '#888'))}
+                                        color={item.color || (isItemActive ? Colors.primary : (isFocused ? Colors.text : Colors.textMuted))}
                                     />
                                     <Text
                                         style={[
@@ -139,7 +139,7 @@ export const Sidebar = forwardRef<SidebarRef, SidebarProps>(({ activeRoute, onNa
 const styles = StyleSheet.create({
     container: {
         height: '100%',
-        backgroundColor: '#121212',
+        backgroundColor: Colors.surface,
         borderRightWidth: 1,
         borderRightColor: 'rgba(255,255,255,0.05)',
         alignItems: 'center',
@@ -160,16 +160,14 @@ const styles = StyleSheet.create({
         borderColor: 'transparent',
     },
     menuItemActive: {
-        backgroundColor: 'rgba(30, 215, 96, 0.1)',
+        backgroundColor: Colors.successLight,
         transform: [{ scale: 1.1 }],
-        // borderColor: 'rgba(30, 215, 96, 0.3)',
     },
     menuItemFocused: {
-        // backgroundColor: 'rgba(255, 255, 255, 0.15)',
-        borderColor: 'rgba(30, 215, 96, 0.3)',
+        borderColor: Colors.focusGlow,
     },
     menuText: {
-        color: '#888',
+        color: Colors.textMuted,
         fontSize: 12,
         textAlign: 'center',
         marginTop: 4,
@@ -179,7 +177,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     focusedText: {
-        color: '#fff',
+        color: Colors.text,
         fontWeight: 'bold',
     },
 });

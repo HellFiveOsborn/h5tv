@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { View, Text, StyleSheet, Modal, FlatList, Pressable, ActivityIndicator, Image, useWindowDimensions, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { Channel, fetchChannels } from '../services/channelService';
 import { fetchCurrentProgram, ProgramInfo } from '../services/guideService';

@@ -5,11 +5,66 @@ param(
     [switch]$Clean,
     [switch]$SkipPrebuild,
     [string]$OutputDir = ".\releases",
-    [ValidateSet("all", "arm64", "arm", "universal")]
+    [ValidateSet("all", "arm64", "arm", "x86", "x86_64", "universal")]
     [string]$Arch = "all"
 )
 
 $ErrorActionPreference = "Stop"
+
+# Verificar e configurar JAVA_HOME para Java 17+
+function Set-JavaHome {
+    $requiredVersion = 17
+    
+    # Verificar versão atual do Java
+    $currentJavaVersion = $null
+    try {
+        $versionOutput = & java -version 2>&1 | Select-Object -First 1
+        if ($versionOutput -match '"(\d+)') {
+            $currentJavaVersion = [int]$Matches[1]
+            # Para Java 8, o formato é "1.8.x"
+            if ($currentJavaVersion -eq 1) {
+                if ($versionOutput -match '"1\.(\d+)') {
+                    $currentJavaVersion = [int]$Matches[1]
+                }
+            }
+        }
+    } catch {}
+    
+    if ($currentJavaVersion -ge $requiredVersion) {
+        Log-Info "Java $currentJavaVersion detectado - OK"
+        return $true
+    }
+    
+    Log-Warning "Java atual ($currentJavaVersion) e inferior a $requiredVersion"
+    
+    # Procurar por instalações de Java 17+
+    $javaPaths = @(
+        "C:\Program Files\Java\jdk-17",
+        "C:\Program Files\Java\jdk-21",
+        "C:\Program Files\Eclipse Adoptium\jdk-17*",
+        "C:\Program Files\Eclipse Adoptium\jdk-21*",
+        "C:\Program Files\Microsoft\jdk-17*",
+        "C:\Program Files\Microsoft\jdk-21*",
+        "C:\Program Files\Zulu\zulu-17*",
+        "C:\Program Files\Zulu\zulu-21*"
+    )
+    
+    foreach ($pattern in $javaPaths) {
+        $paths = Get-Item -Path $pattern -ErrorAction SilentlyContinue
+        foreach ($path in $paths) {
+            if (Test-Path "$($path.FullName)\bin\java.exe") {
+                Log-Info "Encontrado Java em: $($path.FullName)"
+                $env:JAVA_HOME = $path.FullName
+                $env:PATH = "$($path.FullName)\bin;$env:PATH"
+                Log-Success "JAVA_HOME configurado para: $($path.FullName)"
+                return $true
+            }
+        }
+    }
+    
+    Log-Error "Java 17 ou superior nao encontrado. Instale o JDK 17 de: https://adoptium.net/"
+    return $false
+}
 
 # Cores para output
 function Write-ColorOutput($ForegroundColor) {
@@ -45,6 +100,8 @@ function Log-Error($message) {
 $archMapping = @{
     "arm64" = "arm64-v8a"
     "arm" = "armeabi-v7a"
+    "x86" = "x86"
+    "x86_64" = "x86_64"
     "universal" = "universal"
 }
 
@@ -57,6 +114,11 @@ Write-Host ""
 
 if ($Arch -ne "all") {
     Log-Info "Arquitetura selecionada: $Arch"
+}
+
+# Configurar Java 17+
+if (-not (Set-JavaHome)) {
+    exit 1
 }
 
 # Verificar se estamos no diretório correto
@@ -145,6 +207,8 @@ Log-Info "Processando APKs gerados..."
 $allApkMappings = @{
     "app-arm64-v8a-release.apk" = @{ Name = "H5TV-v$version-arm64-v8a.apk"; Arch = "arm64" }
     "app-armeabi-v7a-release.apk" = @{ Name = "H5TV-v$version-armeabi-v7a.apk"; Arch = "arm" }
+    "app-x86-release.apk" = @{ Name = "H5TV-v$version-x86.apk"; Arch = "x86" }
+    "app-x86_64-release.apk" = @{ Name = "H5TV-v$version-x86_64.apk"; Arch = "x86_64" }
     "app-universal-release.apk" = @{ Name = "H5TV-v$version-universal.apk"; Arch = "universal" }
     "app-release.apk" = @{ Name = "H5TV-v$version-universal.apk"; Arch = "universal" }  # Fallback se não houver splits
 }

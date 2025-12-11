@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../constants/Colors';
 import { fetchChannels, Channel, Category } from '../services/channelService';
 import { fetchCurrentProgram, ProgramInfo } from '../services/guideService';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { TopBar } from './TopBar';
 import { ChannelListItem } from './ChannelListItem';
 import { SearchOverlay } from './SearchOverlay';
@@ -19,10 +19,18 @@ if (Platform.OS === 'android') {
     }
 }
 
+// Global cache for channels data to avoid refetching on every overlay open
+let cachedCategories: Category[] | null = null;
+let cachedChannels: Channel[] | null = null;
+let cachedProgramInfos: { [channelId: string]: ProgramInfo | null } = {};
+let cacheTimestamp: number = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 interface ChannelListProps {
     onChannelSelect?: (channel: Channel) => void;
     onBack?: () => void;
     transparent?: boolean;
+    initialCategory?: string;
 }
 
 // Memoized Category Item
@@ -85,11 +93,11 @@ const getIconForCategory = (id: string): any => {
     return 'grid';
 };
 
-export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false }: ChannelListProps) => {
+export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false, initialCategory }: ChannelListProps) => {
     const router = useRouter();
     const [categories, setCategories] = useState<Category[]>([]);
     const [channels, setChannels] = useState<Channel[]>([]);
-    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const [selectedCategory, setSelectedCategory] = useState<string | null>(initialCategory || null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [focusedCategory, setFocusedCategory] = useState<string | null>(null);
@@ -99,8 +107,26 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
     const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
     const firstCategoryRef = useRef<View>(null);
 
+    // Load data on mount
     useEffect(() => {
         loadData();
+    }, []);
+
+    // React to initialCategory changes (when overlay reopens with different channel)
+    useEffect(() => {
+        if (initialCategory && categories.length > 0) {
+            const categoryExists = categories.some(c => c.id === initialCategory);
+            if (categoryExists) {
+                console.log('[ChannelList] Updating selected category to:', initialCategory);
+                setSelectedCategory(initialCategory);
+            }
+        }
+    }, [initialCategory, categories]);
+
+    // Check if cache is valid
+    const isCacheValid = useCallback(() => {
+        const now = Date.now();
+        return cachedCategories && cachedChannels && (now - cacheTimestamp < CACHE_DURATION);
     }, []);
 
     useEffect(() => {
@@ -116,12 +142,44 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
 
     const loadData = async () => {
         try {
+            // Use cache if valid
+            if (isCacheValid()) {
+                console.log('[ChannelList] Using cached data, initialCategory:', initialCategory);
+                setCategories(cachedCategories!);
+                setChannels(cachedChannels!);
+                setProgramInfos(cachedProgramInfos);
+
+                // Always prioritize initialCategory when provided
+                if (initialCategory && cachedCategories!.some(c => c.id === initialCategory)) {
+                    console.log('[ChannelList] Setting initial category:', initialCategory);
+                    setSelectedCategory(initialCategory);
+                } else if (!selectedCategory) {
+                    // Only set default if no category is selected
+                    setSelectedCategory(cachedCategories![0]?.id || null);
+                }
+
+                setLoading(false);
+                return;
+            }
+
+            console.log('[ChannelList] Fetching fresh data');
             setLoading(true);
             const data = await fetchChannels();
+
+            // Update cache
+            cachedCategories = data.categories;
+            cachedChannels = data.channels;
+            cacheTimestamp = Date.now();
+
             setCategories(data.categories);
             setChannels(data.channels);
-            if (data.categories.length > 0) {
-                setSelectedCategory(data.categories[0].id);
+
+            // Always prioritize initialCategory when provided
+            if (initialCategory && data.categories.some(c => c.id === initialCategory)) {
+                console.log('[ChannelList] Setting initial category:', initialCategory);
+                setSelectedCategory(initialCategory);
+            } else if (!selectedCategory) {
+                setSelectedCategory(data.categories[0]?.id || null);
             }
 
             loadProgramInfos(data.channels);
@@ -136,21 +194,29 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
     const loadProgramInfos = async (channelList: Channel[]) => {
         const infos: { [channelId: string]: ProgramInfo | null } = {};
 
-        await Promise.all(
-            channelList.map(async (channel) => {
-                const guideUrl = channel.meuGuiaTv || channel.guide;
-                if (guideUrl) {
-                    try {
-                        const info = await fetchCurrentProgram(guideUrl);
-                        infos[channel.id] = info;
-                    } catch (e) {
-                        infos[channel.id] = null;
+        // Load in batches of 5 to avoid overwhelming the network
+        const batchSize = 5;
+        for (let i = 0; i < channelList.length; i += batchSize) {
+            const batch = channelList.slice(i, i + batchSize);
+            await Promise.all(
+                batch.map(async (channel) => {
+                    const guideUrl = channel.meuGuiaTv || channel.guide;
+                    if (guideUrl) {
+                        try {
+                            const info = await fetchCurrentProgram(guideUrl);
+                            infos[channel.id] = info;
+                        } catch (e) {
+                            infos[channel.id] = null;
+                        }
                     }
-                }
-            })
-        );
+                })
+            );
+            // Update state progressively for better UX
+            setProgramInfos(prev => ({ ...prev, ...infos }));
+        }
 
-        setProgramInfos(infos);
+        // Update global cache
+        cachedProgramInfos = { ...cachedProgramInfos, ...infos };
     };
 
     // Filter channels by category only (search is handled by overlay)
@@ -173,7 +239,9 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
                     name: channel.name,
                     logo: channel.logo,
                     urls: JSON.stringify(channel.url),
-                    guide: channel.guide
+                    guide: channel.guide || '',
+                    meuGuiaTv: channel.meuGuiaTv || '',
+                    category: channel.category || ''
                 }
             });
         }
@@ -241,17 +309,23 @@ export const ChannelList = memo(({ onChannelSelect, onBack, transparent = false 
                     <View style={styles.categoriesSidebar}>
                         <Text style={styles.sectionTitle}>Categorias</Text>
                         <ScrollView showsVerticalScrollIndicator={false}>
-                            {categories.map((category, index) => (
-                                <CategoryItem
-                                    key={category.id}
-                                    category={category}
-                                    isSelected={selectedCategory === category.id}
-                                    onPress={() => handleCategorySelect(category.id)}
-                                    onFocus={() => setFocusedCategory(category.id)}
-                                    onBlur={() => setFocusedCategory(null)}
-                                    hasTVPreferredFocus={index === 0}
-                                />
-                            ))}
+                            {categories.map((category, index) => {
+                                // Give preferred focus to initialCategory or first item
+                                const shouldHaveFocus = initialCategory
+                                    ? category.id === initialCategory
+                                    : index === 0;
+                                return (
+                                    <CategoryItem
+                                        key={category.id}
+                                        category={category}
+                                        isSelected={selectedCategory === category.id}
+                                        onPress={() => handleCategorySelect(category.id)}
+                                        onFocus={() => setFocusedCategory(category.id)}
+                                        onBlur={() => setFocusedCategory(null)}
+                                        hasTVPreferredFocus={shouldHaveFocus}
+                                    />
+                                );
+                            })}
                         </ScrollView>
                     </View>
 

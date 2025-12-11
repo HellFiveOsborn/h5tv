@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, Dimensions, Platform, DeviceEventEmitter, findNodeHandle } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Dimensions, Platform, DeviceEventEmitter, findNodeHandle, Alert } from 'react-native';
 import { Colors } from '../src/constants/Colors';
 import { SplashScreen } from '../src/components/SplashScreen';
 import { GameSlider } from '../src/components/GameSlider';
@@ -18,6 +18,7 @@ import { FocusProvider } from '../src/constants/FocusContext';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
 import { fetchChannels, Channel } from '../src/services/channelService';
+import { fetchCurrentProgram, ProgramInfo } from '../src/services/guideService';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +29,7 @@ export default function Home() {
     const [gameSearchTerms, setGameSearchTerms] = useState<string[]>([]);
     const [gameTitle, setGameTitle] = useState<string>('');
     const [channels, setChannels] = useState<Channel[]>([]);
+    const [channelPrograms, setChannelPrograms] = useState<Record<string, ProgramInfo | null>>({});
     const [focusedChannelId, setFocusedChannelId] = useState<string | null>(null);
     const contentRef = useRef<View>(null);
     const firstChannelRef = useRef<ChannelCardRef>(null);
@@ -74,9 +76,39 @@ export default function Home() {
     const loadChannels = async () => {
         try {
             const data = await fetchChannels();
-            setChannels(data.channels.slice(0, 15));
+            const channelList = data.channels.slice(0, 15);
+            setChannels(channelList);
+
+            // Load EPG for channels with meuGuiaTv
+            loadChannelPrograms(channelList);
         } catch (error) {
             console.error('Error loading channels:', error);
+        }
+    };
+
+    const loadChannelPrograms = async (channelList: Channel[]) => {
+        const programs: Record<string, ProgramInfo | null> = {};
+
+        // Load programs in batches of 5 to avoid overwhelming the API
+        const batchSize = 5;
+        for (let i = 0; i < channelList.length; i += batchSize) {
+            const batch = channelList.slice(i, i + batchSize);
+            await Promise.all(
+                batch.map(async (channel) => {
+                    // Use guide field (contains meuguia.tv URL) or meuGuiaTv as fallback
+                    const guideUrl = channel.guide || channel.meuGuiaTv;
+                    if (guideUrl) {
+                        try {
+                            const program = await fetchCurrentProgram(guideUrl);
+                            programs[channel.id] = program;
+                        } catch (error) {
+                            programs[channel.id] = null;
+                        }
+                    }
+                })
+            );
+            // Update state progressively
+            setChannelPrograms(prev => ({ ...prev, ...programs }));
         }
     };
 
@@ -154,7 +186,8 @@ export default function Home() {
                 logo: channel.logo,
                 urls: JSON.stringify(channel.url),
                 guide: channel.guide || '',
-                meuGuiaTv: channel.meuGuiaTv || ''
+                meuGuiaTv: channel.meuGuiaTv || '',
+                category: channel.category || ''
             }
         });
     };
@@ -177,6 +210,10 @@ export default function Home() {
         setSearchOverlayVisible(true);
     };
 
+    const handleOpenBrowser = () => {
+        router.push('/browser');
+    };
+
     const checkWifiSettings = async () => {
         try {
             const forceWifi = await AsyncStorage.getItem(StorageKeys.SETTINGS_FORCE_WIFI);
@@ -188,14 +225,14 @@ export default function Home() {
                     // On Android 10+ directly enabling WiFi is restricted.
                     // We can open settings.
                     if (Platform.OS === 'android') {
-                        // Alert.alert(
-                        //     'Wi-Fi Desligado',
-                        //     'O aplicativo requer conexão Wi-Fi. Deseja ativar agora?',
-                        //     [
-                        //         { text: 'Não', style: 'cancel' },
-                        //         { text: 'Sim', onPress: () => Linking.openSettings() }
-                        //     ]
-                        // );
+                        Alert.alert(
+                            'Wi-Fi Desligado',
+                            'O aplicativo requer conexão Wi-Fi. Deseja ativar agora?',
+                            [
+                                { text: 'Não', style: 'cancel' },
+                                { text: 'Sim', onPress: () => Linking.openSettings() }
+                            ]
+                        );
                         // For "Force" behavior as requested, we can try to open settings immediately if we detect it's off
                         // But for better UX, let's just log or show a non-blocking toast if we could.
                         // Given the requirement "Force ligar", we'll try to redirect to settings.
@@ -223,7 +260,11 @@ export default function Home() {
                 colors={['#121212', '#000000']}
                 style={styles.gradientBackground}
             >
-                <TopBar onSearchPress={handleOpenSearch} />
+                <TopBar
+                    onSearchPress={handleOpenSearch}
+                    onBrowserPress={handleOpenBrowser}
+                    showBrowserIcon={true}
+                />
 
                 <ScrollView
                     contentContainerStyle={styles.scrollContent}
@@ -254,11 +295,12 @@ export default function Home() {
                                     <ChannelCard
                                         ref={index === 0 ? firstChannelRef : undefined}
                                         channel={channel}
+                                        programInfo={channelPrograms[channel.id]}
                                         onPress={() => handleChannelPress(channel)}
                                         onFocus={() => setFocusedChannelId(channel.id)}
                                         onBlur={() => setFocusedChannelId(null)}
                                         nextFocusLeft={index === 0 ? (sidebarNodeHandle || undefined) : undefined}
-                                        size="small"
+                                        size="medium"
                                     />
                                 </View>
                             ))}

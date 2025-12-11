@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useRef, useState } from 'react';
 import { View, TextInput, StyleSheet, Pressable, ActivityIndicator, TextInputProps } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusArea } from '../constants/FocusContext';
 
 interface SearchInputProps extends Omit<TextInputProps, 'onChangeText' | 'value'> {

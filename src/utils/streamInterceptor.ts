@@ -30,6 +30,36 @@ export const VIDEO_REGEX = /\.(mp4|mp4v|mpv|m1v|m4v|mpg|mpg2|mpeg|xvid|webm|3gp|
 export const VIDEO_REGEX_STRING = String.raw`\.(mp4|mp4v|mpv|m1v|m4v|mpg|mpg2|mpeg|xvid|webm|3gp|avi|mov|mkv|ogg|ogv|ogm|m3u8|mpd|ism(?:[vc]|\/manifest)?)(?:[\?#]|$)`;
 
 /**
+ * Padrões específicos para streams de plataformas (YouTube, Twitch, etc.)
+ * Usados para detectar streams que não seguem o padrão de extensão tradicional
+ */
+export const PLATFORM_STREAM_PATTERNS: readonly RegExp[] = [
+  // YouTube HLS manifests
+  /manifest\.googlevideo\.com.*\.m3u8/i,
+  /googlevideo\.com.*\.m3u8/i,
+  /youtube\.com.*\.m3u8/i,
+  // YouTube video playback
+  /googlevideo\.com\/videoplayback\?.*mime=video/i,
+  /r[0-9]+---sn-.*\.googlevideo\.com/i,
+  // YouTube live streams
+  /youtube\.com\/live_stream/i,
+  /youtube\.com.*live.*\.m3u8/i,
+  // ytimg HLS
+  /i\.ytimg\.com.*\.m3u8/i,
+  // Twitch patterns
+  /usher\.ttvnw\.net.*\.m3u8/i,
+  /video-weaver\..*\.hls\.ttvnw\.net/i,
+  // Facebook Live
+  /video\.xx\.fbcdn\.net.*\.m3u8/i,
+  /facebook\.com.*\.m3u8/i,
+  // DailyMotion
+  /proxy.*\.dailymotion\.com.*\.m3u8/i,
+  // Vimeo
+  /vimeo.*\.akamaized\.net.*\.m3u8/i,
+  /skyfire\.vimeocdn\.com.*\.m3u8/i,
+] as const;
+
+/**
  * Lista unificada de domínios de anúncios para bloquear
  * Combinação das listas de ambos os arquivos originais
  */
@@ -137,7 +167,26 @@ export function isAdUrl(url: string): boolean {
  */
 export function isVideoUrl(url: string): boolean {
   if (!url || typeof url !== 'string') return false;
-  return VIDEO_REGEX.test(url);
+
+  // Verifica extensões de vídeo padrão
+  if (VIDEO_REGEX.test(url)) return true;
+
+  // Verifica padrões específicos de plataformas (YouTube, Twitch, etc.)
+  return PLATFORM_STREAM_PATTERNS.some(pattern => pattern.test(url));
+}
+
+/**
+ * Verifica se uma URL é especificamente um stream do YouTube Live
+ * @param url - URL para verificar
+ * @returns true se for URL de YouTube Live
+ */
+export function isYouTubeLiveUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  return (
+    url.includes('googlevideo.com') ||
+    url.includes('youtube.com/live') ||
+    (url.includes('youtube') && url.includes('.m3u8'))
+  );
 }
 
 /**
@@ -150,13 +199,74 @@ export function isValidStreamUrl(url: string): boolean {
 }
 
 /**
+ * Result of stream URL extraction with header suggestions
+ */
+export interface ExtractedStreamResult {
+  /** The extracted stream URL */
+  url: string;
+  /** Whether the URL was extracted from a wrapper/player page */
+  wasExtracted: boolean;
+  /** The original wrapper URL (if extracted) */
+  wrapperUrl?: string;
+  /** Suggested headers for the extracted stream */
+  suggestedHeaders: {
+    Referer: string;
+    Origin: string;
+  };
+}
+
+/**
+ * Helper to construct Origin from URL
+ */
+function getOriginFromUrl(urlString: string): string {
+  try {
+    const urlObj = new URL(urlString);
+    return `${urlObj.protocol}//${urlObj.host}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Helper to construct Referer from URL (with trailing slash)
+ */
+function getRefererFromUrl(urlString: string): string {
+  try {
+    const urlObj = new URL(urlString);
+    return `${urlObj.protocol}//${urlObj.host}/`;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Extrai a URL real do stream de uma URL que pode conter o stream como parâmetro
  * Ex: "player.html?m3u8=https://example.com/stream.m3u8" -> "https://example.com/stream.m3u8"
  * @param url - URL original (pode ser uma página de player ou URL direta)
  * @returns URL do stream extraída ou a URL original se não houver parâmetro
  */
 export function extractStreamUrl(url: string): string {
-  if (!url) return url;
+  return extractStreamUrlWithHeaders(url).url;
+}
+
+/**
+ * Extrai a URL real do stream com sugestões de headers adequados
+ * Ex: "player.html?m3u8=https://example.com/stream.m3u8" -> { url: "https://...", suggestedHeaders: {...} }
+ *
+ * @param url - URL original (pode ser uma página de player ou URL direta)
+ * @returns Objeto com URL extraída e headers sugeridos
+ */
+export function extractStreamUrlWithHeaders(url: string): ExtractedStreamResult {
+  const defaultResult: ExtractedStreamResult = {
+    url: url || '',
+    wasExtracted: false,
+    suggestedHeaders: {
+      Referer: getRefererFromUrl(url),
+      Origin: getOriginFromUrl(url),
+    },
+  };
+
+  if (!url) return defaultResult;
 
   try {
     const urlObj = new URL(url);
@@ -170,7 +280,18 @@ export function extractStreamUrl(url: string): string {
         // Verifica se é realmente uma URL de vídeo
         if (VIDEO_REGEX.test(value)) {
           console.log(`[extractStreamUrl] Extracted ${param}:`, value);
-          return value;
+          // For extracted URLs, use the extracted URL's domain for headers
+          // This is critical because many stream servers reject requests with
+          // Referer from different domains (like the wrapper page domain)
+          return {
+            url: value,
+            wasExtracted: true,
+            wrapperUrl: url,
+            suggestedHeaders: {
+              Referer: getRefererFromUrl(value),
+              Origin: getOriginFromUrl(value),
+            },
+          };
         }
       }
     }
@@ -181,7 +302,15 @@ export function extractStreamUrl(url: string): string {
         const decoded = decodeURIComponent(value);
         if ((decoded.startsWith('http://') || decoded.startsWith('https://')) && VIDEO_REGEX.test(decoded)) {
           console.log(`[extractStreamUrl] Extracted decoded ${key}:`, decoded);
-          return decoded;
+          return {
+            url: decoded,
+            wasExtracted: true,
+            wrapperUrl: url,
+            suggestedHeaders: {
+              Referer: getRefererFromUrl(decoded),
+              Origin: getOriginFromUrl(decoded),
+            },
+          };
         }
       } catch (e) {
         // Ignora erros de decodificação
@@ -191,40 +320,206 @@ export function extractStreamUrl(url: string): string {
     // URL inválida, retorna original
   }
 
-  return url;
+  return defaultResult;
 }
 
 /**
  * Detecta o tipo de stream pela URL para uso com ExoPlayer
+ * Implements comprehensive detection with fallback to HLS (most common for live streams)
+ *
  * @param url - URL do stream
- * @returns Extensão do tipo de mídia ('m3u8', 'mpd', 'mp4', etc.) ou undefined
+ * @param headers - Optional headers that may contain content-type hints
+ * @returns Extensão do tipo de mídia ('m3u8', 'mpd', 'mp4', etc.) - never undefined
  */
-export function detectStreamType(url: string): string | undefined {
-  if (!url) return undefined;
+export function detectStreamType(url: string, headers?: Record<string, string>): string {
+  if (!url) {
+    console.log('[StreamType] No URL provided, defaulting to m3u8');
+    return 'm3u8';
+  }
+
   const urlLower = url.toLowerCase();
+  let detectedType: string | undefined;
 
-  // HLS
-  if (urlLower.includes('.m3u8') || urlLower.includes('/hls/')) return 'm3u8';
+  // ===========================================
+  // 1. Check explicit file extensions (highest priority)
+  // ===========================================
 
-  // DASH
-  if (urlLower.includes('.mpd') || urlLower.includes('/dash/')) return 'mpd';
+  // HLS - .m3u8 extension
+  if (urlLower.includes('.m3u8')) {
+    detectedType = 'm3u8';
+  }
+  // DASH - .mpd extension
+  else if (urlLower.includes('.mpd')) {
+    detectedType = 'mpd';
+  }
+  // Smooth Streaming - .ism extension
+  else if (urlLower.includes('.ism')) {
+    detectedType = 'ism';
+  }
+  // Direct video files
+  else if (urlLower.includes('.mp4')) {
+    detectedType = 'mp4';
+  }
+  else if (urlLower.includes('.webm')) {
+    detectedType = 'webm';
+  }
+  else if (urlLower.includes('.mkv')) {
+    detectedType = 'mkv';
+  }
+  else if (urlLower.includes('.avi')) {
+    detectedType = 'avi';
+  }
+  else if (urlLower.includes('.mov')) {
+    detectedType = 'mov';
+  }
+  else if (urlLower.includes('.flv')) {
+    detectedType = 'flv';
+  }
+  else if (urlLower.includes('.ts')) {
+    detectedType = 'ts';
+  }
+  else if (urlLower.includes('.m4v')) {
+    detectedType = 'm4v';
+  }
+  else if (urlLower.includes('.3gp')) {
+    detectedType = '3gp';
+  }
+  else if (urlLower.includes('.ogg') || urlLower.includes('.ogv')) {
+    detectedType = 'ogg';
+  }
 
-  // Smooth Streaming
-  if (urlLower.includes('.ism') || urlLower.includes('/manifest')) return 'ism';
+  // ===========================================
+  // 2. Check URL path patterns (if no extension found)
+  // ===========================================
+  if (!detectedType) {
+    // HLS path patterns
+    if (
+      urlLower.includes('/hls/') ||
+      urlLower.includes('/hls.') ||
+      urlLower.includes('/playlist') ||
+      urlLower.includes('/master') ||
+      urlLower.includes('/chunklist') ||
+      urlLower.includes('/index.m3u') ||
+      urlLower.includes('/live.m3u') ||
+      urlLower.includes('_hls') ||
+      urlLower.includes('hls_') ||
+      /\/[^\/]*master[^\/]*$/i.test(urlLower) ||
+      /\/[^\/]*playlist[^\/]*$/i.test(urlLower)
+    ) {
+      detectedType = 'm3u8';
+    }
+    // DASH path patterns
+    else if (
+      urlLower.includes('/dash/') ||
+      urlLower.includes('/dash.') ||
+      urlLower.includes('_dash') ||
+      urlLower.includes('dash_') ||
+      urlLower.includes('/manifest(')  // Azure Media Services style
+    ) {
+      detectedType = 'mpd';
+    }
+    // Smooth Streaming patterns
+    else if (
+      urlLower.includes('/manifest') && !urlLower.includes('.m3u')
+    ) {
+      detectedType = 'ism';
+    }
+  }
 
-  // Arquivos diretos
-  if (urlLower.includes('.mp4')) return 'mp4';
-  if (urlLower.includes('.webm')) return 'webm';
-  if (urlLower.includes('.mkv')) return 'mkv';
-  if (urlLower.includes('.avi')) return 'avi';
-  if (urlLower.includes('.mov')) return 'mov';
-  if (urlLower.includes('.flv')) return 'flv';
-  if (urlLower.includes('.ts')) return 'ts';
-  if (urlLower.includes('.m4v')) return 'm4v';
-  if (urlLower.includes('.3gp')) return '3gp';
-  if (urlLower.includes('.ogg') || urlLower.includes('.ogv')) return 'ogg';
+  // ===========================================
+  // 3. Check query parameters
+  // ===========================================
+  if (!detectedType) {
+    try {
+      const urlObj = new URL(url);
+      const params = urlObj.searchParams;
 
-  return undefined;
+      // Check format parameter
+      const format = params.get('format') || params.get('type') || params.get('output');
+      if (format) {
+        const formatLower = format.toLowerCase();
+        if (formatLower === 'hls' || formatLower === 'm3u8') {
+          detectedType = 'm3u8';
+        } else if (formatLower === 'dash' || formatLower === 'mpd') {
+          detectedType = 'mpd';
+        } else if (formatLower === 'mp4') {
+          detectedType = 'mp4';
+        }
+      }
+
+      // Check for HLS/DASH indicators in query string
+      const queryString = urlObj.search.toLowerCase();
+      if (!detectedType) {
+        if (queryString.includes('hls') || queryString.includes('m3u8')) {
+          detectedType = 'm3u8';
+        } else if (queryString.includes('dash') || queryString.includes('mpd')) {
+          detectedType = 'mpd';
+        }
+      }
+    } catch (e) {
+      // Invalid URL, continue to next checks
+    }
+  }
+
+  // ===========================================
+  // 4. Check Content-Type from headers (if provided)
+  // ===========================================
+  if (!detectedType && headers) {
+    const contentType = headers['Content-Type'] || headers['content-type'] || '';
+    const contentTypeLower = contentType.toLowerCase();
+
+    if (
+      contentTypeLower.includes('application/vnd.apple.mpegurl') ||
+      contentTypeLower.includes('application/x-mpegurl') ||
+      contentTypeLower.includes('audio/mpegurl') ||
+      contentTypeLower.includes('audio/x-mpegurl')
+    ) {
+      detectedType = 'm3u8';
+    } else if (
+      contentTypeLower.includes('application/dash+xml') ||
+      contentTypeLower.includes('video/vnd.mpeg.dash.mpd')
+    ) {
+      detectedType = 'mpd';
+    } else if (contentTypeLower.includes('video/mp4')) {
+      detectedType = 'mp4';
+    } else if (contentTypeLower.includes('video/webm')) {
+      detectedType = 'webm';
+    }
+  }
+
+  // ===========================================
+  // 5. Platform-specific patterns
+  // ===========================================
+  if (!detectedType) {
+    // YouTube/Google Video - typically HLS
+    if (urlLower.includes('googlevideo.com') || urlLower.includes('youtube.com')) {
+      detectedType = 'm3u8';
+    }
+    // Twitch - typically HLS
+    else if (urlLower.includes('ttvnw.net') || urlLower.includes('twitch.tv')) {
+      detectedType = 'm3u8';
+    }
+    // Akamai - could be either, but HLS more common
+    else if (urlLower.includes('akamaized.net') || urlLower.includes('akamaihd.net')) {
+      detectedType = 'm3u8';
+    }
+    // Cloudfront - typically HLS for live
+    else if (urlLower.includes('cloudfront.net')) {
+      detectedType = 'm3u8';
+    }
+  }
+
+  // ===========================================
+  // 6. Fallback to HLS (most common for live streams)
+  // ===========================================
+  if (!detectedType) {
+    console.log('[StreamType] Unknown format, defaulting to m3u8:', url);
+    detectedType = 'm3u8';
+  } else {
+    console.log('[StreamType] Detected type:', detectedType, 'for URL:', url.substring(0, 100) + (url.length > 100 ? '...' : ''));
+  }
+
+  return detectedType;
 }
 
 // =============================================================================
@@ -330,342 +625,8 @@ ins.adsbygoogle, div.adsbygoogle,
 `;
 
 // =============================================================================
-// SCRIPTS JAVASCRIPT INJETADOS
+// SCRIPT DE ADBLOCK PARA ANDROID NATIVO
 // =============================================================================
-
-/**
- * Gera o script JavaScript completo para injeção no WebView
- * @returns String com o código JavaScript
- */
-export function generateInjectedJavaScript(): string {
-  return `
-(function() {
-  'use strict';
-
-  // ===== ANTI-DETECTION =====
-  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-  Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-  Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-
-  // ===== POPUP BLOCKING =====
-  var noop = function() { return null; };
-
-  window.open = noop;
-  Object.defineProperty(window, 'open', { value: noop, writable: false, configurable: false });
-
-  window.alert = noop;
-  window.confirm = function() { return false; };
-  window.prompt = function() { return null; };
-
-  if (window.Notification) {
-    window.Notification.requestPermission = function() { return Promise.resolve('denied'); };
-  }
-
-  // ===== AD DOMAIN BLOCKING =====
-  var adDomains = ${JSON.stringify(AD_DOMAINS)};
-
-  function isAdUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-    var urlLower = url.toLowerCase();
-    for (var i = 0; i < adDomains.length; i++) {
-      if (urlLower.indexOf(adDomains[i]) !== -1) return true;
-    }
-    if (urlLower.match(/[?&](ad|ads|advert|banner|sponsor|track|click|pixel)[=_-]/i)) return true;
-    if (urlLower.match(/\\/(ad|ads|advert|banner|sponsor|track|click|pixel)[\\/\\.?]/i)) return true;
-    return false;
-  }
-
-  // ===== XHR INTERCEPTION =====
-  var originalXHROpen = XMLHttpRequest.prototype.open;
-  var originalXHRSend = XMLHttpRequest.prototype.send;
-
-  XMLHttpRequest.prototype.open = function(method, url) {
-    this._url = url;
-    this._blocked = isAdUrl(url);
-    if (this._blocked) {
-      console.log('[H5TV] Blocked ad XHR:', url);
-      return;
-    }
-    return originalXHROpen.apply(this, arguments);
-  };
-
-  XMLHttpRequest.prototype.send = function() {
-    if (this._blocked) {
-      Object.defineProperty(this, 'status', { value: 0 });
-      Object.defineProperty(this, 'readyState', { value: 4 });
-      Object.defineProperty(this, 'responseText', { value: '' });
-      Object.defineProperty(this, 'response', { value: '' });
-      var self = this;
-      setTimeout(function() {
-        if (self.onerror) self.onerror(new Error('Blocked'));
-        if (self.onloadend) self.onloadend();
-      }, 0);
-      return;
-    }
-    return originalXHRSend.apply(this, arguments);
-  };
-
-  // ===== FETCH INTERCEPTION =====
-  var originalFetch = window.fetch;
-  window.fetch = function(input, init) {
-    var url = typeof input === 'string' ? input : (input && input.url);
-    if (isAdUrl(url)) {
-      console.log('[H5TV] Blocked ad fetch:', url);
-      return Promise.reject(new Error('Blocked ad request'));
-    }
-    return originalFetch.apply(this, arguments);
-  };
-
-  // ===== CSS AD HIDING =====
-  var adBlockStyles = document.createElement('style');
-  adBlockStyles.id = 'h5tv-adblock';
-  adBlockStyles.innerHTML = \`${AD_BLOCK_CSS.replace(/`/g, '\\`')}\`;
-
-  function injectAdBlockStyles() {
-    if (!document.getElementById('h5tv-adblock')) {
-      (document.head || document.documentElement).appendChild(adBlockStyles.cloneNode(true));
-    }
-  }
-  injectAdBlockStyles();
-
-  // ===== CLICK HIJACK PREVENTION =====
-  document.addEventListener('click', function(e) {
-    var target = e.target;
-    var depth = 0;
-    while (target && depth < 15) {
-      if (target.tagName === 'A') {
-        var href = target.href || '';
-        if (target.target === '_blank' || isAdUrl(href)) {
-          console.log('[H5TV] Blocked click on:', href);
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-          return false;
-        }
-      }
-      target = target.parentElement;
-      depth++;
-    }
-  }, true);
-
-  window.addEventListener('click', function(e) {
-    if (e.target.tagName === 'A' && e.target.target === '_blank') {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-  }, true);
-
-  // ===== VIDEO URL REGEX =====
-  var videoRegex = /${VIDEO_REGEX_STRING}/i;
-
-  // ===== STREAM DETECTION =====
-  function sendStreamUrl(url, source) {
-    if (!url || typeof url !== 'string') return;
-    if (videoRegex.test(url) && !isAdUrl(url)) {
-      var topWindow = window;
-      try { while(topWindow.parent && topWindow.parent !== topWindow) topWindow = topWindow.parent; } catch(e) {}
-      try {
-        topWindow.ReactNativeWebView.postMessage(JSON.stringify({
-          type: source,
-          url: url,
-          headers: {
-            'Cookie': document.cookie || '',
-            'User-Agent': navigator.userAgent,
-            'Referer': window.location.href,
-            'Origin': window.location.origin
-          }
-        }));
-        console.log('[H5TV] Stream detected (' + source + '):', url);
-      } catch(e) {}
-    }
-  }
-
-  // ===== INTERCEPT REQUESTS =====
-  function interceptRequests(targetWindow) {
-    try {
-      var origOpen = targetWindow.XMLHttpRequest.prototype.open;
-      targetWindow.XMLHttpRequest.prototype.open = function(method, url) {
-        sendStreamUrl(url, 'xhr');
-        return origOpen.apply(this, arguments);
-      };
-
-      var origFetch = targetWindow.fetch;
-      targetWindow.fetch = function(input, init) {
-        var url = typeof input === 'string' ? input : (input && input.url);
-        sendStreamUrl(url, 'fetch');
-        return origFetch.apply(this, arguments);
-      };
-
-      var origCreate = targetWindow.document.createElement.bind(targetWindow.document);
-      targetWindow.document.createElement = function(tagName) {
-        var el = origCreate(tagName);
-        var tag = tagName.toLowerCase();
-        if (tag === 'video' || tag === 'source' || tag === 'audio') {
-          var origSet = el.setAttribute.bind(el);
-          el.setAttribute = function(name, value) {
-            if (name === 'src') sendStreamUrl(value, 'element-attr');
-            return origSet(name, value);
-          };
-          Object.defineProperty(el, 'src', {
-            set: function(v) { sendStreamUrl(v, 'element-src'); origSet('src', v); },
-            get: function() { return el.getAttribute('src'); }
-          });
-        }
-        return el;
-      };
-    } catch(e) { console.log('[H5TV] interceptRequests error:', e); }
-  }
-
-  // ===== IFRAME INJECTION =====
-  function injectIntoIframe(iframe) {
-    try {
-      var iframeWin = iframe.contentWindow;
-      var iframeDoc = iframe.contentDocument || (iframeWin && iframeWin.document);
-      if (iframeWin && iframeDoc) {
-        interceptRequests(iframeWin);
-        injectAdBlockStyles.call({ doc: iframeDoc });
-        observeIframes(iframeDoc);
-        observeVideoElements(iframeDoc);
-
-        iframeWin.open = noop;
-        iframeWin.alert = noop;
-        iframeWin.confirm = function() { return false; };
-      }
-    } catch(e) {}
-  }
-
-  function observeIframes(doc) {
-    try {
-      var iframes = doc.querySelectorAll('iframe');
-      iframes.forEach(function(iframe) {
-        iframe.addEventListener('load', function() { injectIntoIframe(iframe); });
-        try { injectIntoIframe(iframe); } catch(e) {}
-      });
-
-      var obs = new MutationObserver(function(muts) {
-        muts.forEach(function(m) {
-          m.addedNodes.forEach(function(n) {
-            if (n.nodeType === 1) {
-              if (n.tagName === 'IFRAME') {
-                n.addEventListener('load', function() { injectIntoIframe(n); });
-                if (isAdUrl(n.src)) {
-                  n.src = 'about:blank';
-                  n.style.display = 'none';
-                }
-              }
-              var nested = n.querySelectorAll ? n.querySelectorAll('iframe') : [];
-              nested.forEach(function(f) {
-                f.addEventListener('load', function() { injectIntoIframe(f); });
-                if (isAdUrl(f.src)) {
-                  f.src = 'about:blank';
-                  f.style.display = 'none';
-                }
-              });
-            }
-          });
-        });
-      });
-      obs.observe(doc.body || doc.documentElement, { childList: true, subtree: true });
-    } catch(e) {}
-  }
-
-  function observeVideoElements(doc) {
-    try {
-      doc.querySelectorAll('video, source, audio').forEach(function(v) {
-        if (v.src) sendStreamUrl(v.src, 'video-element');
-        if (v.currentSrc) sendStreamUrl(v.currentSrc, 'video-currentSrc');
-      });
-
-      var obs = new MutationObserver(function(muts) {
-        muts.forEach(function(m) {
-          m.addedNodes.forEach(function(n) {
-            if (n.nodeType === 1) {
-              var tag = n.tagName;
-              if (tag === 'VIDEO' || tag === 'SOURCE' || tag === 'AUDIO') {
-                if (n.src) sendStreamUrl(n.src, 'video-added');
-                if (n.currentSrc) sendStreamUrl(n.currentSrc, 'video-currentSrc');
-              }
-              var vids = n.querySelectorAll ? n.querySelectorAll('video, source, audio') : [];
-              vids.forEach(function(v) {
-                if (v.src) sendStreamUrl(v.src, 'video-nested');
-                if (v.currentSrc) sendStreamUrl(v.currentSrc, 'video-nested-currentSrc');
-              });
-            }
-          });
-          if (m.type === 'attributes' && (m.attributeName === 'src' || m.attributeName === 'currentSrc')) {
-            var src = m.target.src || m.target.getAttribute('src') || m.target.currentSrc;
-            if (src) sendStreamUrl(src, 'video-attr-change');
-          }
-        });
-      });
-      obs.observe(doc.body || doc.documentElement, {
-        childList: true, subtree: true,
-        attributes: true, attributeFilter: ['src', 'currentSrc']
-      });
-    } catch(e) {}
-  }
-
-  // ===== DYNAMIC AD REMOVAL =====
-  var adObserver = new MutationObserver(function(muts) {
-    muts.forEach(function(m) {
-      m.addedNodes.forEach(function(n) {
-        if (n.nodeType !== 1) return;
-        var tag = n.tagName ? n.tagName.toLowerCase() : '';
-        var cls = (n.className || '').toLowerCase();
-        var id = (n.id || '').toLowerCase();
-
-        if (tag === 'iframe' && isAdUrl(n.src)) {
-          n.remove();
-          return;
-        }
-
-        if (cls.match(/ad[s]?[-_]|advert|sponsor|banner|popup|overlay/i) ||
-            id.match(/ad[s]?[-_]|advert|sponsor|banner|popup|overlay/i)) {
-          n.style.display = 'none';
-        }
-
-        if (tag === 'script' && isAdUrl(n.src)) {
-          n.remove();
-        }
-      });
-    });
-  });
-
-  function startAdObserver() {
-    if (document.body) {
-      adObserver.observe(document.body, { childList: true, subtree: true });
-    }
-  }
-
-  // ===== INITIALIZATION =====
-  interceptRequests(window);
-  observeIframes(document);
-  observeVideoElements(document);
-  startAdObserver();
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      injectAdBlockStyles();
-      observeIframes(document);
-      observeVideoElements(document);
-      startAdObserver();
-    });
-  }
-
-  setInterval(function() {
-    document.querySelectorAll('video, audio').forEach(function(v) {
-      if (v.currentSrc && !v._h5tvChecked) {
-        v._h5tvChecked = true;
-        sendStreamUrl(v.currentSrc, 'video-periodic');
-      }
-    });
-  }, 2000);
-
-  console.log('[H5TV] AdBlock and Stream Interceptor initialized');
-})();
-`;
-}
 
 /**
  * Gera o script JavaScript simplificado para Android nativo (onPageFinished)
@@ -752,14 +713,17 @@ export default {
   USER_AGENT,
   VIDEO_REGEX,
   VIDEO_REGEX_STRING,
+  PLATFORM_STREAM_PATTERNS,
   AD_DOMAINS,
   AD_URL_PATTERNS,
   AD_BLOCK_CSS,
   AD_BLOCK_CSS_MINIMAL,
   isAdUrl,
   isVideoUrl,
+  isYouTubeLiveUrl,
   isValidStreamUrl,
-  generateInjectedJavaScript,
+  extractStreamUrl,
+  detectStreamType,
   generateNativeAdBlockScript,
   getAdDomainsForKotlin,
   getVideoRegexForKotlin,

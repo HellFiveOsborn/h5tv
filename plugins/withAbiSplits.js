@@ -2,7 +2,8 @@ const { withAppBuildGradle } = require('@expo/config-plugins');
 
 /**
  * Plugin para configurar ABI splits no Android
- * Gera APKs separados por arquitetura (arm64-v8a, armeabi-v7a) + universal
+ * Gera APKs separados por arquitetura (arm64-v8a, armeabi-v7a, x86, x86_64) + universal
+ * Inclui x86/x86_64 para suporte a emuladores Android TV
  */
 const withAbiSplits = (config) => {
     return withAppBuildGradle(config, (config) => {
@@ -41,7 +42,7 @@ def abiCodes = ['armeabi-v7a': 1, 'arm64-v8a': 2, 'x86': 3, 'x86_64': 4]
         abi {
             enable true
             reset()
-            include 'armeabi-v7a', 'arm64-v8a'
+            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
             universalApk true // Gerar também APK universal
         }
     }
@@ -81,7 +82,7 @@ def abiCodes = ['armeabi-v7a': 1, 'arm64-v8a': 2, 'x86': 3, 'x86_64': 4]
             /(defaultConfig\s*\{[\s\S]*?)(buildConfigField)/,
             `$1// Habilitar ndk abiFilters para compilação
         ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a'
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
         }
 
         $2`

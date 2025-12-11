@@ -6,17 +6,17 @@
  * - Tem bypass de Cloudflare embutido
  * - Bloqueia anúncios a nível de rede
  * - Persiste cookies entre sessões
+ *
+ * Plataforma suportada: Android 6+ (Android TV incluso)
  */
 
 import React, { useRef, useCallback, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  Text,
   ActivityIndicator,
   requireNativeComponent,
   UIManager,
-  Platform,
   findNodeHandle,
   NativeSyntheticEvent,
 } from 'react-native';
@@ -39,6 +39,13 @@ interface ErrorEvent {
   description: string;
 }
 
+interface NavigationStateEvent {
+  url: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  title?: string;
+}
+
 interface NativeStreamWebViewProps {
   source: { uri: string; headers?: Record<string, string> };
   userAgent?: string;
@@ -53,14 +60,25 @@ interface NativeStreamWebViewProps {
   onStreamDetected?: (event: NativeSyntheticEvent<StreamDetectedEvent>) => void;
   onLoadStart?: (event: NativeSyntheticEvent<LoadEvent>) => void;
   onLoadEnd?: (event: NativeSyntheticEvent<LoadEvent>) => void;
+  onNavigationStateChange?: (event: NativeSyntheticEvent<NavigationStateEvent>) => void;
   onError?: (event: NativeSyntheticEvent<ErrorEvent>) => void;
   style?: any;
 }
 
-// Registrar o componente nativo
-const NativeWebView = Platform.OS === 'android'
-  ? requireNativeComponent<NativeStreamWebViewProps>('StreamInterceptorWebView')
-  : null;
+// Registrar o componente nativo Android
+const viewManagerName = 'StreamInterceptorWebView';
+let NativeWebView: any = null;
+
+try {
+  // Verificar se o ViewManager está registrado antes de tentar requerer
+  if (UIManager.getViewManagerConfig(viewManagerName)) {
+    NativeWebView = requireNativeComponent<NativeStreamWebViewProps>(viewManagerName);
+  }
+} catch (e) {
+  console.warn('[NativeStreamWebView] Componente nativo não encontrado. Certifique-se de que o app foi compilado com o plugin withStreamInterceptor.');
+}
+
+export const isNativeComponentAvailable = !!NativeWebView;
 
 // Comandos disponíveis no ViewManager
 const Commands = {
@@ -87,12 +105,13 @@ interface Props {
   url: string;
   onStreamDetected: (data: { url: string; headers: StreamHeaders }) => void;
   onLoadStart?: () => void;
-  onLoadEnd?: () => void;
+  onLoadEnd?: (url: string) => void;
+  onNavigationStateChange?: (state: { url: string; canGoBack: boolean; canGoForward: boolean; title?: string }) => void;
   onError?: (error: string) => void;
 }
 
 export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Props>(
-  ({ url, onStreamDetected, onLoadStart, onLoadEnd, onError }, ref) => {
+  ({ url, onStreamDetected, onLoadStart, onLoadEnd, onNavigationStateChange, onError }, ref) => {
     const webViewRef = useRef<any>(null);
     const detectedUrlsRef = useRef<Set<string>>(new Set());
 
@@ -104,7 +123,7 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
     // Expor métodos via ref
     React.useImperativeHandle(ref, () => ({
       loadUrl: (newUrl: string) => {
-        if (webViewRef.current && Platform.OS === 'android') {
+        if (webViewRef.current) {
           UIManager.dispatchViewManagerCommand(
             findNodeHandle(webViewRef.current),
             Commands.loadUrl,
@@ -113,7 +132,7 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
         }
       },
       reload: () => {
-        if (webViewRef.current && Platform.OS === 'android') {
+        if (webViewRef.current) {
           UIManager.dispatchViewManagerCommand(
             findNodeHandle(webViewRef.current),
             Commands.reload,
@@ -122,7 +141,7 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
         }
       },
       goBack: () => {
-        if (webViewRef.current && Platform.OS === 'android') {
+        if (webViewRef.current) {
           UIManager.dispatchViewManagerCommand(
             findNodeHandle(webViewRef.current),
             Commands.goBack,
@@ -131,7 +150,7 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
         }
       },
       goForward: () => {
-        if (webViewRef.current && Platform.OS === 'android') {
+        if (webViewRef.current) {
           UIManager.dispatchViewManagerCommand(
             findNodeHandle(webViewRef.current),
             Commands.goForward,
@@ -140,7 +159,7 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
         }
       },
       injectJavaScript: (script: string) => {
-        if (webViewRef.current && Platform.OS === 'android') {
+        if (webViewRef.current) {
           UIManager.dispatchViewManagerCommand(
             findNodeHandle(webViewRef.current),
             Commands.injectJavaScript,
@@ -149,7 +168,7 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
         }
       },
       clearDetectedUrls: () => {
-        if (webViewRef.current && Platform.OS === 'android') {
+        if (webViewRef.current) {
           UIManager.dispatchViewManagerCommand(
             findNodeHandle(webViewRef.current),
             Commands.clearDetectedUrls,
@@ -159,7 +178,7 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
         detectedUrlsRef.current.clear();
       },
       stopLoading: () => {
-        if (webViewRef.current && Platform.OS === 'android') {
+        if (webViewRef.current) {
           UIManager.dispatchViewManagerCommand(
             findNodeHandle(webViewRef.current),
             Commands.stopLoading,
@@ -196,10 +215,21 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
     // Handler para fim de carregamento
     const handleLoadEnd = useCallback(
       (event: NativeSyntheticEvent<LoadEvent>) => {
-        console.log('[NativeStreamWebView] Load ended:', event.nativeEvent.url);
-        onLoadEnd?.();
+        const loadedUrl = event.nativeEvent.url;
+        console.log('[NativeStreamWebView] Load ended:', loadedUrl);
+        onLoadEnd?.(loadedUrl);
       },
       [onLoadEnd]
+    );
+
+    // Handler para mudança de estado de navegação
+    const handleNavigationStateChange = useCallback(
+      (event: NativeSyntheticEvent<NavigationStateEvent>) => {
+        const { url: navUrl, canGoBack, canGoForward, title } = event.nativeEvent;
+        console.log('[NativeStreamWebView] Navigation state changed:', { navUrl, canGoBack, canGoForward });
+        onNavigationStateChange?.({ url: navUrl, canGoBack, canGoForward, title });
+      },
+      [onNavigationStateChange]
     );
 
     // Handler para erros
@@ -211,13 +241,13 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
       [onError]
     );
 
-    // Fallback para iOS (não suportado)
-    if (Platform.OS !== 'android' || !NativeWebView) {
+    // Se o componente nativo não estiver disponível, mostrar loading
+    // (isso não deve acontecer em builds de release)
+    if (!NativeWebView) {
+      console.error('[NativeStreamWebView] Componente nativo não disponível. Verifique se o app foi compilado corretamente.');
       return (
-        <View style={[styles.webViewContainer, styles.fallback]}>
-          <Text style={styles.fallbackText}>
-            NativeStreamWebView só está disponível no Android
-          </Text>
+        <View style={styles.webViewContainer}>
+          <ActivityIndicator size="large" color={Colors.primary} />
         </View>
       );
     }
@@ -237,13 +267,10 @@ export const NativeStreamWebView = React.forwardRef<NativeStreamWebViewRef, Prop
           onStreamDetected={handleStreamDetected}
           onLoadStart={handleLoadStart}
           onLoadEnd={handleLoadEnd}
+          onNavigationStateChange={handleNavigationStateChange}
           onError={handleError}
           style={styles.webView}
         />
-        <View style={styles.overlayIndicator}>
-          <Text style={styles.overlayText}>Carregando...</Text>
-          <ActivityIndicator size="small" color={Colors.primary} />
-        </View>
       </View>
     );
   }
@@ -253,39 +280,13 @@ NativeStreamWebView.displayName = 'NativeStreamWebView';
 
 const styles = StyleSheet.create({
   webViewContainer: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     backgroundColor: '#000',
   },
   webView: {
     flex: 1,
-    backgroundColor: '#000',
-  },
-  overlayIndicator: {
-    position: 'absolute',
-    bottom: 40,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    pointerEvents: 'none',
-  },
-  overlayText: {
-    color: '#fff',
-    marginRight: 10,
-    fontSize: 14,
-  },
-  fallback: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fallbackText: {
-    color: '#fff',
-    fontSize: 16,
-    textAlign: 'center',
-    padding: 20,
+    width: '100%',
+    height: '100%',
   },
 });
 

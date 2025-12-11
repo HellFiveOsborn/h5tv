@@ -28,13 +28,15 @@ Antes de realizar o build, certifique-se de ter:
 
 ## Estrutura dos APKs
 
-O build gera três APKs com tamanhos otimizados:
+O build gera cinco APKs com tamanhos otimizados:
 
 | APK | Arquitetura | Tamanho Aprox. | Dispositivos |
 |-----|-------------|----------------|--------------|
 | `H5TV-v{version}-arm64-v8a.apk` | ARM 64-bit | ~35-40 MB | Smartphones modernos, TVs Android |
 | `H5TV-v{version}-armeabi-v7a.apk` | ARM 32-bit | ~30-35 MB | Dispositivos antigos, TV boxes |
-| `H5TV-v{version}-universal.apk` | Todas | ~70 MB | Qualquer dispositivo Android |
+| `H5TV-v{version}-x86.apk` | x86 32-bit | ~35-40 MB | Emuladores Android, alguns tablets |
+| `H5TV-v{version}-x86_64.apk` | x86 64-bit | ~35-40 MB | Emuladores Android TV |
+| `H5TV-v{version}-universal.apk` | Todas | ~100 MB | Qualquer dispositivo Android |
 
 ### Por que APKs separados?
 
@@ -111,6 +113,8 @@ chmod +x ./scripts/build-release.sh
 | `all` | Todas as arquiteturas | Releases completas |
 | `arm64` | ARM 64-bit (arm64-v8a) | Smartphones/TVs modernos |
 | `arm` | ARM 32-bit (armeabi-v7a) | Dispositivos antigos, TV boxes |
+| `x86` | Intel/AMD 32-bit | Emuladores, tablets antigos |
+| `x86_64` | Intel/AMD 64-bit | Emuladores Android TV |
 | `universal` | Todas as ABIs | Compatibilidade máxima |
 
 ## Processo de Release
@@ -143,6 +147,8 @@ npm run build:release:clean
 6. **Upload dos APKs:**
    - `H5TV-v1.3.0-arm64-v8a.apk`
    - `H5TV-v1.3.0-armeabi-v7a.apk`
+   - `H5TV-v1.3.0-x86.apk`
+   - `H5TV-v1.3.0-x86_64.apk`
    - `H5TV-v1.3.0-universal.apk`
 
 ### 4. Publicar Release
